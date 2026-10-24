@@ -65,7 +65,7 @@ Hooks 协作版本已实现，使用说明见 README.md。所有源码改动已�
 - [x] 通过 Codex 官方审核界面信任 Hook 定义；桌面版的 7 个事件均已启用且受信任。
 - [x] 真实会话 SessionStart 登记与后台额度读取正常。
 - [x] 保留远端初始 MIT 许可证提交并合并两侧 Git 历史。
-- [x] 英文默认 README、独立中文 README、双语架构图与英文在前的双语仓库描述。
+- [x] 中文默认 README、独立英文 README、双语架构图与双语仓库描述。
 
 发布目标：[flyl1u/fly-CodexLimit](https://github.com/flyl1u/fly-CodexLimit)。
 仓库元信息保存在 .github/repository-metadata.json，所有源码与文档更改按阶段提交 Git。
