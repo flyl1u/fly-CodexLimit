@@ -10,7 +10,7 @@ import sys
 import threading
 
 from . import __version__
-from .config import Config, default_home
+from .config import Config, default_home, runtime_environment
 from .daemon import run_daemon
 from .files import atomic_json
 from .hooks import error_output, handle_hook
@@ -63,7 +63,7 @@ def doctor(home, config, live=False, thread_id=None):
               "hooks_loaded": "需在目标 Codex 聊天中触发生命周期事件验证；本命令不绕过信任审核",
               "default_mode": "Hooks 协作收尾，独立连接读取账户和持久化标题元数据"}
     if live:
-        with RpcClient(config.server_command, timeout=config.rpc_timeout_seconds) as rpc:
+        with RpcClient(config.server_command, timeout=config.rpc_timeout_seconds, env=runtime_environment(home)) as rpc:
             account = rpc.request("account/read", {"refreshToken": False}).get("account")
             result["auth_type"] = account.get("type") if account else None
             snap = Snapshot.parse(rpc.request("account/rateLimits/read", {}), time.time(), config.limit_ids)

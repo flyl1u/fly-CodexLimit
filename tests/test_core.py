@@ -154,6 +154,17 @@ class StoreTests(unittest.TestCase):
         self.store.release_lease("one")
         self.assertEqual(self.store.get_meta("daemon_lease")["owner"], "two")
 
+    def test_schema_upgrade_keeps_checkpoints_and_is_concurrency_safe(self):
+        self.start()
+        self.store.checkpoint("t", {"current": "升级前", "next_step": "核对"}, "old-t", now=102)
+        with self.store.connect() as db:
+            db.execute("ALTER TABLE tasks DROP COLUMN marker_prefix")
+            db.execute("UPDATE meta SET value='1' WHERE key='schema_version'")
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda _: Store(self.home), range(8)))
+        self.assertEqual(self.store.get_meta("schema_version"), 2)
+        self.assertIn("升级前", self.store.task("t")["checkpoint"])
+
 
 class TitleTests(unittest.TestCase):
     def test_no_duplicate_prefix_or_unowned_removal(self):

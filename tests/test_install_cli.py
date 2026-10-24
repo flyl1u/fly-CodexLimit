@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from codex_limit_guard.config import Config
+from codex_limit_guard.config import runtime_environment
 from codex_limit_guard.daemon import run_daemon
 from codex_limit_guard.files import atomic_json
 from codex_limit_guard.install import install, uninstall, apply_transaction, recover_install
@@ -40,6 +41,7 @@ class InstallTests(unittest.TestCase):
         original_config = 'model = "existing-model"\n[features]\nhooks = true\n'
         (self.codex / "config.toml").write_text(original_config, encoding="utf-8")
         install(self.home, self.codex, ENTRY)
+        self.assertEqual(runtime_environment(self.home)["CODEX_HOME"], str(self.codex.resolve()))
         install(self.home, self.codex, ENTRY)
         data = json.loads((self.codex / "hooks.json").read_text(encoding="utf-8"))
         self.assertEqual(len(data["hooks"]["PreToolUse"]), 2)

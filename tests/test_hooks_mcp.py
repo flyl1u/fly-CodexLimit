@@ -82,6 +82,14 @@ class HookTests(unittest.TestCase):
         self.invoke("Stop", offset=32)
         self.assertEqual(self.invoke("UserPromptSubmit", offset=33, turn_id="new")["decision"], "block")
 
+    def test_subagent_turn_does_not_overwrite_parent_or_block_healthy_work(self):
+        self.invoke("UserPromptSubmit")
+        result = self.invoke("PreToolUse", turn_id="child-turn", tool_name="Bash", tool_input={})
+        self.assertEqual(result, {})
+        self.assertEqual(self.store.task("thread")["turn_id"], "turn")
+        self.invoke("PostToolUse", turn_id="child-turn", tool_name="Bash", tool_input={})
+        self.assertEqual(self.store.task("thread")["turn_id"], "turn")
+
     def test_check_failure_returns_valid_deny_shape(self):
         self.assertEqual(error_output("PreToolUse", "locked")["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertEqual(error_output("UserPromptSubmit", "locked")["decision"], "block")

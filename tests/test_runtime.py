@@ -103,6 +103,21 @@ class RuntimeTests(unittest.TestCase):
         self.coordinator.reconcile_tasks(151)
         self.assertEqual(self.rpc.title, "❗ 用户原标记")
 
+    def test_prefix_ownership_survives_config_change(self):
+        self.store.close_turn("task", "turn", config=self.cfg, now=131)
+        self.coordinator.reconcile_tasks(132)
+        self.store.update_task("task", phase="running", resume_started_at=150)
+        changed = Coordinator(self.store, Config(title_prefix="! "), self.rpc)
+        changed.reconcile_tasks(151)
+        self.assertEqual(self.rpc.title, "测试任务")
+
+    def test_missing_real_title_is_reported_as_capability_error(self):
+        self.rpc.title = None
+        self.store.close_turn("task", "turn", config=self.cfg, now=131)
+        errors = self.coordinator.reconcile_tasks(132)
+        self.assertTrue(errors)
+        self.assertEqual(self.count("thread/name/set"), 0)
+
     def test_report_distinguishes_old_checkpoint_and_pending_stop(self):
         self.store.checkpoint("task", {"current": "旧进度", "next_step": "继续检查"}, "turn", now=120)
         report = render_report(self.store.task("task"))

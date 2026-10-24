@@ -39,7 +39,9 @@ class RpcClient:
     def __init__(self, command, timeout=15, env=None):
         self.command = resolve_command(command)
         self.timeout = timeout
-        self.env = dict(os.environ, **(env or {}), PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        self.env = dict(os.environ)
+        self.env.update(env or {})
+        self.env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
         self.process = None
         self.notifications = queue.Queue(maxsize=1000)
         self.diagnostics = deque(maxlen=10)

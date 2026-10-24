@@ -6,6 +6,7 @@ import time
 import uuid
 
 from .report import export_report
+from .config import runtime_environment
 from .rpc import RpcClient, RpcError
 from .titles import mark_title, restore_title
 
@@ -86,8 +87,8 @@ class Coordinator:
         if not isinstance(current, str) or not current.strip():
             # Don't replace an unknown auto-generated UI title with a guessed one.
             self.store.put_meta(f"title_error:{task['thread_id']}", "运行时未提供真实标题；等待标题元数据可读")
-            return
-        prefix = self.config.title_prefix
+            raise RpcError("运行时未提供真实标题，未改名；等待标题元数据可读")
+        prefix = task.get("marker_prefix") or self.config.title_prefix
         if pending:
             if current == pending["target"]:
                 self._finish_title(task["thread_id"], pending)
@@ -103,13 +104,13 @@ class Coordinator:
             if not owned:
                 self.store.update_task(task["thread_id"], marker_done=1, marker_owned=0, title=current)
                 return
-            pending = {"kind": "mark", "source": current, "target": target, "owned": True}
+            pending = {"kind": "mark", "source": current, "target": target, "owned": True, "prefix": prefix}
         else:
             target = restore_title(current, prefix, bool(task["marker_owned"]))
             if target == current:
                 self.store.update_task(task["thread_id"], marker_done=0, marker_owned=0, title=current)
                 return
-            pending = {"kind": "restore", "source": current, "target": target, "owned": False}
+            pending = {"kind": "restore", "source": current, "target": target, "owned": False, "prefix": prefix}
         # Persist intent before I/O, so a crash after the write can recover ownership.
         self.store.update_task(task["thread_id"], title_action=json.dumps(pending, ensure_ascii=False))
         self.rpc.request("thread/name/set", {"threadId": task["thread_id"], "name": pending["target"]})
@@ -118,7 +119,8 @@ class Coordinator:
     def _finish_title(self, thread_id, pending):
         self.store.update_task(thread_id, title=pending["target"], title_action=None,
                                marker_done=1 if pending["kind"] == "mark" else 0,
-                               marker_owned=int(pending["owned"]), marker_title=pending["target"])
+                               marker_owned=int(pending["owned"]), marker_title=pending["target"],
+                               marker_prefix=pending.get("prefix", self.config.title_prefix) if pending["kind"] == "mark" else None)
         self.store.put_meta(f"title_error:{thread_id}", None)
 
     def reconcile_tasks(self, now):
@@ -166,6 +168,7 @@ class Coordinator:
 
 def run_daemon(store, config, stop_event, once=False, client_factory=RpcClient):
     owner = str(uuid.uuid4())
+    runtime_env = runtime_environment(store.home)
     lease_ttl = max(60, config.poll_seconds * 3, config.rpc_timeout_seconds * 5)
     if not store.acquire_lease(owner, lease_ttl):
         raise RuntimeError("此状态目录已有守护程序，拒绝重复启动")
@@ -195,7 +198,7 @@ def run_daemon(store, config, stop_event, once=False, client_factory=RpcClient):
     try:
         while not stop_event.is_set():
             try:
-                with client_factory(config.server_command, timeout=config.rpc_timeout_seconds) as rpc:
+                with client_factory(config.server_command, timeout=config.rpc_timeout_seconds, env=runtime_env) as rpc:
                     coordinator = Coordinator(store, config, rpc)
                     while not stop_event.is_set():
                         if not store.acquire_lease(owner, lease_ttl):

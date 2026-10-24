@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     checkpoint TEXT, checkpoint_at REAL, checkpoint_turn_id TEXT,
     resume_requested_at REAL, resume_turn_id TEXT, resume_started_at REAL,
     marker_owned INTEGER NOT NULL DEFAULT 0, marker_title TEXT,
+    marker_prefix TEXT,
     title_action TEXT, marker_done INTEGER NOT NULL DEFAULT 0,
     steer_turn_id TEXT, interrupt_turn_id TEXT,
     last_tool TEXT, last_tool_at REAL
@@ -45,10 +46,13 @@ class Store:
         with self.connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript(SCHEMA)
-            version = self._meta(db, "schema_version", 1)
-            if version != 1:
+            db.execute("BEGIN IMMEDIATE")
+            version = self._meta(db, "schema_version", 2)
+            if version not in (1, 2):
                 raise ValueError(f"不支持的数据库版本: {version}")
-            self._put(db, "schema_version", 1)
+            if "marker_prefix" not in {r[1] for r in db.execute("PRAGMA table_info(tasks)")}:
+                db.execute("ALTER TABLE tasks ADD COLUMN marker_prefix TEXT")
+            self._put(db, "schema_version", 2)
 
     def _open(self):
         db = sqlite3.connect(self.path, timeout=1.0)

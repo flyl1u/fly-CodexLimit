@@ -15,6 +15,14 @@ def default_home() -> Path:
     return codex_home / "limit-guard"
 
 
+def runtime_environment(home: Path) -> dict:
+    manifest_path = Path(home) / "installation.json"
+    if not manifest_path.exists():
+        return {}
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return {"CODEX_HOME": str(Path(manifest["codex_home"]).resolve())}
+
+
 @dataclass(frozen=True)
 class Config:
     warn_remaining: float = 20

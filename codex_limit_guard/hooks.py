@@ -78,11 +78,15 @@ def handle_hook(event, store, config, now=None):
                                    tool=tool, executed=name == "PostToolUse")
         task = store.task(thread_id)
         protecting = decision.protected or task["phase"] in ("pausing", "paused", "ready")
-        if protecting or not allowed:
+        if protecting:
             if name == "PreToolUse":
                 return deny_tool(PAUSE_SIGNAL + f" 当前 thread_id={thread_id} turn_id={turn_id}。"
                                  "仅专用断点 MCP 工具可用于保存，不执行新的 shell 命令。")
             return context(name, PAUSE_SIGNAL)
+        if not allowed:
+            # Subagent tool hooks can carry the parent session id with another turn id.
+            # Never overwrite the parent's progress or deny healthy subagent work.
+            return {}
         if decision.mode == "warning" and name == "PreToolUse":
             if tool in ("Agent", "spawn_agent") or tool.endswith("__create_thread"):
                 return deny_tool("额度预警：暂停新建并行任务，现有工作请尽快保存里程碑断点。")
@@ -94,7 +98,7 @@ def handle_hook(event, store, config, now=None):
         latest = store.task(thread_id)
         if latest.get("pause_reason"):
             export_report(store, latest)
-        if name == "Stop" and was_pausing:
+        if name == "Stop" and (was_pausing or latest["phase"] in ("paused", "ready")):
             # Do not create a continuation prompt to demand another report.
             return {"continue": False, "stopReason": "额度保护：当前回合已结束，断点已保存到本地"}
         return {}
