@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-**在 Codex 额度耗尽前保存进度，让任务可以从断点继续。**
+**在 Codex 额度耗尽前自动保存进度，让任务可以从断点继续。**
 
 Python 3.11+ · 优先支持 Windows · 运行时仅使用标准库 · [MIT](LICENSE)
 
