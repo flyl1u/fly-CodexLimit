@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title description">
+<title id="title">fly-CodexLimit — Quota protection &amp; resumable checkpoints</title>
+<desc id="description">One local daemon + lifecycle Hooks + a short checkpoint Skill. 16:9 architecture diagram.</desc>
+<defs>
+  <filter id="shadow" x="-15%" y="-30%" width="130%" height="170%"><feDropShadow dx="0" dy="5" stdDeviation="9" flood-color="#163b72" flood-opacity="0.055"/></filter>
+  <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M2 1 L11 6 L2 11 Z" fill="#7c8da5"/></marker>
+  <marker id="arrowOptional" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M2 1 L11 6 L2 11 Z" fill="#b49663"/></marker>
+</defs>
+<rect width="1920" height="1080" fill="#f6f8fc"/>
+<g font-family="Segoe UI, Microsoft YaHei, Noto Sans CJK SC, Arial, sans-serif">
+<text x="80" y="59" font-size="18" font-weight="650" fill="#3b6fa4" text-anchor="start" letter-spacing="1.1">FLY-CODEXLIMIT / SYSTEM ARCHITECTURE</text>
+<text x="80" y="118" font-size="46" font-weight="650" fill="#172c4b" text-anchor="start">Quota protection &amp; resumable checkpoints</text>
+<text x="80" y="158" font-size="22" font-weight="400" fill="#556982" text-anchor="start">One local daemon + lifecycle Hooks + a short checkpoint Skill</text>
+<rect x="1598" y="54" width="242" height="44" rx="22" fill="#eaf0f8" stroke="none" stroke-width="1.5"/>
+<text x="1719" y="83" font-size="19" font-weight="550" fill="#42618a" text-anchor="middle">16:9 · 1920 × 1080</text>
+<path d="M80 185 H1840" stroke="#dce5f0" stroke-width="1.5"/>
+<path d="M410 322 H520" fill="none" stroke="#7c8da5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M900 322 H1020" fill="none" stroke="#7c8da5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M710 384 V470" fill="none" stroke="#7c8da5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<path d="M710 606 V700" fill="none" stroke="#7c8da5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<path d="M520 538 H410" fill="none" stroke="#7c8da5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M410 764 H520" fill="none" stroke="#7c8da5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M900 764 H1020" fill="none" stroke="#7c8da5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M1400 764 H1510" fill="none" stroke="#7c8da5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M1675 700 V538 H900" fill="none" stroke="#7c8da5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M710 260 V222 H1675 V260" fill="none" stroke="#b49663" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrowOptional)" stroke-dasharray="9 8"/>
+<rect x="80" y="260" width="330" height="124" rx="20" fill="#ffffff" stroke="#dce4ef" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="104" y="290" font-size="14" font-weight="650" fill="#5c7ca9" text-anchor="start" letter-spacing="0.8">ACCOUNT</text>
+<text x="104" y="328" font-size="28" font-weight="650" fill="#213b5d" text-anchor="start">Account quota API</text>
+<text x="104" y="362" font-size="17" font-weight="400" fill="#657990" text-anchor="start">App Server · short / long windows</text>
+<rect x="520" y="260" width="380" height="124" rx="20" fill="#173e74" stroke="#173e74" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="544" y="290" font-size="14" font-weight="650" fill="#b9d0f3" text-anchor="start" letter-spacing="0.8">COORDINATOR</text>
+<text x="544" y="328" font-size="28" font-weight="650" fill="#ffffff" text-anchor="start">Local daemon</text>
+<text x="544" y="362" font-size="19" font-weight="400" fill="#d7e5f8" text-anchor="start">One account view across all tasks</text>
+<rect x="1020" y="260" width="380" height="124" rx="20" fill="#ffffff" stroke="#dce4ef" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="1044" y="290" font-size="14" font-weight="650" fill="#5c7ca9" text-anchor="start" letter-spacing="0.8">METADATA</text>
+<rect x="1346" y="276" width="30" height="30" rx="9" fill="#fff0ed" stroke="none" stroke-width="1.5"/>
+<text x="1361" y="299" font-size="23" font-weight="750" fill="#d45945" text-anchor="middle">!</text>
+<text x="1044" y="328" font-size="28" font-weight="650" fill="#213b5d" text-anchor="start">Title metadata API</text>
+<text x="1044" y="362" font-size="19" font-weight="400" fill="#657990" text-anchor="start">Add / restore the pause marker</text>
+<rect x="1510" y="260" width="330" height="124" rx="20" fill="#fffcf6" stroke="#e5d8c0" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="1534" y="290" font-size="14" font-weight="650" fill="#a08655" text-anchor="start" letter-spacing="0.8">OPTIONAL</text>
+<text x="1534" y="328" font-size="26" font-weight="650" fill="#213b5d" text-anchor="start">Active-turn control</text>
+<text x="1534" y="362" font-size="19" font-weight="400" fill="#657990" text-anchor="start">steer / interrupt</text>
+<rect x="80" y="476" width="330" height="124" rx="20" fill="#ffffff" stroke="#dce4ef" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="104" y="506" font-size="14" font-weight="650" fill="#5c7ca9" text-anchor="start" letter-spacing="0.8">EXPORT</text>
+<text x="104" y="544" font-size="28" font-weight="650" fill="#213b5d" text-anchor="start">Progress reports</text>
+<text x="104" y="578" font-size="19" font-weight="400" fill="#657990" text-anchor="start">Markdown + JSON</text>
+<rect x="80" y="700" width="330" height="128" rx="20" fill="#ffffff" stroke="#dce4ef" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="104" y="730" font-size="14" font-weight="650" fill="#5c7ca9" text-anchor="start" letter-spacing="0.8">SESSION</text>
+<text x="104" y="768" font-size="28" font-weight="650" fill="#213b5d" text-anchor="start">Codex chat</text>
+<text x="104" y="802" font-size="19" font-weight="400" fill="#657990" text-anchor="start">Current user task</text>
+<rect x="520" y="700" width="380" height="128" rx="20" fill="#edf4fe" stroke="#cbdcf2" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="544" y="730" font-size="14" font-weight="650" fill="#5c7ca9" text-anchor="start" letter-spacing="0.8">LOCAL GUARDRAIL</text>
+<text x="544" y="768" font-size="28" font-weight="650" fill="#213b5d" text-anchor="start">Lifecycle Hooks</text>
+<text x="544" y="802" font-size="19" font-weight="400" fill="#657990" text-anchor="start">Read the cache · gate new tools</text>
+<rect x="1020" y="700" width="380" height="128" rx="20" fill="#ffffff" stroke="#dce4ef" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="1044" y="730" font-size="14" font-weight="650" fill="#5c7ca9" text-anchor="start" letter-spacing="0.8">WRAP-UP</text>
+<text x="1044" y="768" font-size="26" font-weight="650" fill="#213b5d" text-anchor="start">Current task + Skill</text>
+<text x="1044" y="802" font-size="19" font-weight="400" fill="#657990" text-anchor="start">Save progress · report · end the turn</text>
+<rect x="1510" y="700" width="330" height="128" rx="20" fill="#edf4fe" stroke="#cbdcf2" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="1534" y="730" font-size="14" font-weight="650" fill="#5c7ca9" text-anchor="start" letter-spacing="0.8">CHECKPOINT TOOLS</text>
+<text x="1534" y="768" font-size="26" font-weight="650" fill="#213b5d" text-anchor="start">Checkpoint MCP</text>
+<text x="1534" y="802" font-size="19" font-weight="400" fill="#657990" text-anchor="start">save / read / status</text>
+<path d="M520 490 C520 463 900 463 900 490 V586 C900 613 520 613 520 586 Z" fill="#edf8f2" stroke="#b8d8c8" stroke-width="1.5" filter="url(#shadow)"/>
+<ellipse cx="710" cy="490" rx="190" ry="20" fill="#e4f3eb" stroke="#b8d8c8" stroke-width="1.5"/>
+<text x="710" y="538" font-size="29" font-weight="650" fill="#215a44" text-anchor="middle">Shared state</text>
+<text x="710" y="569" font-size="19" font-weight="400" fill="#527b69" text-anchor="middle">Quota · tasks · checkpoints</text>
+<text x="710" y="593" font-size="17" font-weight="400" fill="#527b69" text-anchor="middle">Title ownership · resume queue</text>
+<rect x="1016.0" y="191" width="328" height="30" rx="8" fill="#f6f8fc" stroke="none" stroke-width="1.5"/>
+<text x="1180" y="211" font-size="18" font-weight="500" fill="#9b7e50" text-anchor="middle">Verified same runtime only</text>
+<text x="960" y="302" font-size="18" font-weight="500" fill="#60738f" text-anchor="middle">Rename</text>
+<text x="739" y="433" font-size="18" font-weight="500" fill="#60738f" text-anchor="start">Quota cache</text>
+<text x="739" y="660" font-size="18" font-weight="500" fill="#60738f" text-anchor="start">Local checks</text>
+<text x="465" y="518" font-size="18" font-weight="500" fill="#60738f" text-anchor="middle">Export</text>
+<text x="465" y="744" font-size="18" font-weight="500" fill="#60738f" text-anchor="middle">Check</text>
+<text x="960" y="744" font-size="18" font-weight="500" fill="#60738f" text-anchor="middle">Wrap up</text>
+<text x="1455" y="744" font-size="18" font-weight="500" fill="#60738f" text-anchor="middle">Save</text>
+<text x="1320" y="518" font-size="18" font-weight="500" fill="#60738f" text-anchor="middle">Checkpoint writes</text>
+<rect x="80" y="900" width="1760" height="112" rx="22" fill="#eaf0f8" stroke="none" stroke-width="1.5"/>
+<path d="M610 925 V987 M1220 925 V987" stroke="#d4dfed" stroke-width="1.5"/>
+<text x="106" y="942" font-size="18" font-weight="650" fill="#315682" text-anchor="start">NO EXTRA MODEL REQUESTS</text>
+<text x="106" y="978" font-size="18" font-weight="400" fill="#5c718c" text-anchor="start">Polling · title updates · state sync</text>
+<text x="638" y="942" font-size="18" font-weight="650" fill="#315682" text-anchor="start">CONFIRMED PAUSE</text>
+<text x="638" y="978" font-size="18" font-weight="400" fill="#5c718c" text-anchor="start">Checkpoint → end confirmation → title marker</text>
+<text x="1248" y="942" font-size="18" font-weight="650" fill="#315682" text-anchor="start">USER-INITIATED RESUME</text>
+<text x="1248" y="978" font-size="18" font-weight="400" fill="#5c718c" text-anchor="start">Fresh quota → user request → actual execution</text>
+<text x="80" y="1046" font-size="16" font-weight="400" fill="#73849b" text-anchor="start">Progress summaries still use the task&#x27;s model context. Dashed connector: optional runtime control.</text>
+<text x="1840" y="1046" font-size="16" font-weight="400" fill="#73849b" text-anchor="end">flyl1u/fly-CodexLimit</text>
+</g></svg>

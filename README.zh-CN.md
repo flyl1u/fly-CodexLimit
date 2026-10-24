@@ -36,6 +36,8 @@ flowchart LR
     class State,Reports storage
 ```
 
+16:9 架构图：[PNG，1920 × 1080](docs/images/architecture.zh-CN.png) · [可编辑 SVG](docs/images/architecture.zh-CN.svg)。
+
 监控、改名和状态协调由普通程序执行；任务仅在保存语义断点时使用当前模型上下文。
 Hooks 不逐个联网查额度，多个任务共享同一个守护程序的判断。
 

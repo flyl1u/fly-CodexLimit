@@ -48,6 +48,8 @@ flowchart LR
     class State,Reports storage
 ```
 
+16:9 exports: [PNG, 1920 × 1080](docs/images/architecture.en.png) · [Editable SVG](docs/images/architecture.en.svg).
+
 Hooks read the local database instead of querying the account for every tool call.
 During protection, new business operations are denied while the dedicated checkpoint
 MCP tools remain available. The task saves a concise report and ends its current turn.
