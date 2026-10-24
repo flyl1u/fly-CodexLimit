@@ -62,7 +62,7 @@ def run_demo(output):
                     store, config, now=now)
     record("三个任务正常运行")
     now += 30
-    store.observe_quota(quota(94, 10000), config, now=now)
+    store.observe_quota(quota(99, 10000), config, now=now)
     record("统一触发额度保护")
     for key in runtime.titles:
         store.checkpoint(key, {"completed": ["示例页面实现"], "current": "第二组测试结果尚待确认",

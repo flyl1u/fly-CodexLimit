@@ -97,7 +97,7 @@ class Decision:
 
 def decide(snapshot: Snapshot | None, previous: Snapshot | None, config: Config,
            active_tasks: int, latched: bool, now: float) -> Decision:
-    extra = max(0, active_tasks - 1) * config.reserve_per_extra_task
+    extra = max(0, active_tasks - 1) * config.reserve_per_extra_task if config.adaptive_reserve else 0
     pause_at = min(config.max_pause_remaining, config.pause_remaining + extra)
     resume_at = min(99.0, max(config.resume_remaining, pause_at + 5))
     observed = snapshot.observed_at if snapshot else 0
@@ -112,7 +112,8 @@ def decide(snapshot: Snapshot | None, previous: Snapshot | None, config: Config,
         # Duration identifies a 5-hour window even if primary/secondary are swapped.
         # Missing duration, including old cached samples, uses the weekly fallback.
         base = config.five_hour_pause_remaining if window.duration_minutes == 300 else config.pause_remaining
-        burn = max(0, window.used - old[window.key]) / elapsed if window.key in old else 0
+        burn = (max(0, window.used - old[window.key]) / elapsed
+                if config.adaptive_reserve and window.key in old else 0)
         pause_at = min(config.max_pause_remaining, base + extra + burn * (config.poll_seconds + config.grace_seconds))
         resume_at = min(99.0, max(config.resume_remaining, pause_at + 5))
         remaining = window.remaining
@@ -120,7 +121,7 @@ def decide(snapshot: Snapshot | None, previous: Snapshot | None, config: Config,
         if snapshot.reached or remaining <= pause_at or (latched and remaining < resume_at):
             mode, reason = "protect", f"{label} 剩余 {remaining:g}%，保留收尾额度"
         elif remaining <= max(config.warn_remaining, pause_at + 5):
-            mode, reason = "warning", f"{label} 剩余 {remaining:g}%，暂停新增并行任务"
+            mode, reason = "warning", f"{label} 剩余 {remaining:g}%，建议保存进度；仍可继续任务"
         else:
             mode, reason = "normal", "额度充足"
         decisions.append(Decision(mode, reason, remaining, pause_at, resume_at, observed, label))

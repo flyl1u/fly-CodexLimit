@@ -22,7 +22,7 @@ Writing a semantic progress summary still uses the current task's model context.
 ## What it does
 
 - **One account view:** checks short and long quota windows across relevant limit buckets.
-- **Earlier wrap-up for concurrent work:** reserves extra budget for additional tasks and recent usage growth.
+- **Predictable thresholds:** 5% remaining for five-hour limits and 2% for weekly limits; adaptive reserves are opt-in.
 - **Persistent checkpoints:** stores completed work, the current state, pending work, validation, and the next step.
 - **Cheap title markers:** updates metadata directly and tracks ownership to preserve user edits.
 - **Explicit resumption:** waits for fresh quota data and a user request, then staggers resume admission.
@@ -114,7 +114,11 @@ python guard.py doctor --live --thread YOUR_THREAD_ID
 ```
 
 Normal Hooks are quiet. At meaningful milestones, the task uses `save_checkpoint` to
-record progress. The state transitions are:
+record progress. The 20% warning only advises saving progress; it does not block prompts
+or tools. During protection, user messages still reach the task along with the complete
+`codex-limit-checkpoint` Skill. Business tools pause while checkpoint MCP tools remain
+available. If no fresh checkpoint exists at Stop, the Hook allows one bounded wrap-up
+continuation before closing the turn. The state transitions are:
 
 | Phase | Meaning |
 | --- | --- |
@@ -126,8 +130,10 @@ record progress. The state transitions are:
 | `running` / `idle` | Actual work resumed and the owned marker can be removed; `idle` means the turn ended. |
 
 `idle` does not claim the whole task is complete. The guard never automatically replays
-user messages or starts a model turn. Simultaneous resume requests are admitted in order
-with a spacing interval; a blocked message must be sent again later. A reply without an
+user messages or starts business turns in the background. Simultaneous resume requests
+admit business execution in order with a spacing interval. Queued messages still reach
+the task, which explains the wait; send another request later to continue. A new user turn
+after recovery can also recover a task with a missing closing Hook. A reply without an
 executed business tool keeps the pause marker.
 
 Reports are exported as Markdown and JSON under the state directory's `checkpoints/`.
@@ -143,11 +149,12 @@ Hooks read configuration on their next invocation.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `warn_remaining` | `20` | Remaining-percent warning line; defer new rounds and parallel branches. |
+| `warn_remaining` | `20` | Advisory warning; prompts and business tools remain available. |
 | `pause_remaining` | `2` | Base remaining-percent wrap-up threshold for weekly and other windows. |
 | `five_hour_pause_remaining` | `5` | Base remaining-percent wrap-up threshold for a 5-hour window, when present. |
 | `resume_remaining` | `25` | Recovery hysteresis to avoid repeated pause/resume cycles. |
-| `reserve_per_extra_task` | `2` | Additional percentage-point reserve per extra active task. |
+| `adaptive_reserve` | `false` | Explicitly enable thresholds based on concurrency and usage growth. |
+| `reserve_per_extra_task` | `2` | Reserve per extra active task when adaptive reserves are enabled. |
 | `max_pause_remaining` | `60` | Upper bound on the dynamic protection threshold. |
 | `poll_seconds` | `30` | Account polling interval shared by all Hooks. |
 | `grace_seconds` | `90` | Wait before the verified-runtime interrupt fallback. |
@@ -163,10 +170,14 @@ the weekly 2% threshold. Windows are identified by their reported duration, rath
 assuming `primary` always means 5 hours; missing duration uses the 2% fallback.
 
 Each window is checked against its own threshold, and any breached window triggers
-protection. Its dynamic reserve adds concurrent-task reserve and that window's recent
-usage growth over the polling and wrap-up interval, capped at `max_pause_remaining`.
+protection. By default the thresholds stay at 5% / 2%, regardless of concurrent tasks or
+usage growth. With `adaptive_reserve=true`, the dynamic reserve adds concurrent-task
+reserve and that window's recent usage growth over the polling and wrap-up interval,
+capped at `max_pause_remaining`.
 Usage growth is measured between consecutive samples and never carried across a reset
-or a window-duration change. Recovery requires every relevant window to clear its
+or a window-duration change. Policy changes re-evaluate fresh quota without inheriting
+an old threshold's protection latch; a cache outage does not create a recovery latch.
+Recovery requires every relevant window to clear its
 recovery line; a reset timestamp alone is not evidence of recovery.
 These thresholds are estimates and cannot guarantee enough quota for every wrap-up.
 
@@ -199,7 +210,7 @@ python -m compileall -q codex_limit_guard guard.py
 python -m pip wheel . --no-deps --wheel-dir .guard-local/dist
 ```
 
-The 46 tests cover quota windows, hysteresis, concurrent writes, schema upgrades, resume
+The 67 tests cover quota windows, hysteresis, concurrent writes, schema upgrades, resume
 admission, Hook decisions, native Windows launch commands, MCP, title ownership,
 RPC timeout/disconnection, and reversible installation. Windows account reads, daemon
 startup/shutdown, and isolated wheel installation have also been verified.

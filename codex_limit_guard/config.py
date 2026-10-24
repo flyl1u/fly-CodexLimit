@@ -30,6 +30,7 @@ class Config:
     five_hour_pause_remaining: float = 5
     resume_remaining: float = 25
     reserve_per_extra_task: float = 2
+    adaptive_reserve: bool = False
     max_pause_remaining: float = 60
     poll_seconds: float = 30
     grace_seconds: float = 90
@@ -69,6 +70,8 @@ class Config:
             raise ValueError("title_prefix 必须是 1–20 字符的非空标记")
         if not isinstance(self.control_active_turns, bool):
             raise ValueError("control_active_turns 必须是布尔值")
+        if not isinstance(self.adaptive_reserve, bool):
+            raise ValueError("adaptive_reserve 必须是布尔值")
         for name in ("limit_ids", "server_command"):
             value = getattr(self, name)
             if not isinstance(value, (list, tuple)) or any(not isinstance(x, str) or not x for x in value):

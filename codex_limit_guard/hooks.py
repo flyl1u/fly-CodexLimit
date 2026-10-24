@@ -49,18 +49,20 @@ def handle_hook(event, store, config, now=None):
     if name == "SessionStart":
         return context(name, (
             f"Codex Limit Guard 已启用；thread_id={thread_id}。重要阶段用 "
-            "codex_limit_guard.save_checkpoint 保存简短断点。收到 [CODEX_LIMIT_GUARD] 时"
+            "codex_limit_guard.save_checkpoint 保存简短断点。预警不阻止新任务。"
+            "收到 [CODEX_LIMIT_GUARD] 时应用 codex-limit-checkpoint Skill，"
             "只保存断点、简短汇报并结束本轮；续做时先核对断点和实际文件。"
         ))
     if name == "UserPromptSubmit":
         if decision.protected:
-            return {"decision": "block", "reason": f"[CODEX_LIMIT_GUARD] {decision.reason}。额度恢复后再次发送继续。"}
-        if decision.mode == "warning" and task["phase"] == "idle":
-            return {"decision": "block", "reason": "额度预警：保留现有任务收尾预算，暂缓新回合。"}
+            store.begin_checkpoint_turn(thread_id, turn_id, decision.reason, now=now)
+            return context(name, PAUSE_SIGNAL + f"\n原因：{decision.reason}。"
+                           f"当前 thread_id={thread_id} turn_id={turn_id}。")
         allowed, reason = store.request_resume(thread_id, turn_id, config, now=now)
         if not allowed:
-            return {"decision": "block", "reason": reason}
-        store.begin_work(thread_id, turn_id, config, now=now)
+            return context(name, f"用户消息已接收。{reason}。本轮只回复等待原因，"
+                           "不要执行新的业务工具；已有断点保持原样。")
+        store.begin_work(thread_id, turn_id, config, now=now, user_submitted=True)
         latest = store.task(thread_id)
         if latest["phase"] == "resuming":
             cp = json.loads(latest["checkpoint"]) if latest.get("checkpoint") else None
@@ -68,6 +70,9 @@ def handle_hook(event, store, config, now=None):
                            f"断点时间={latest.get('checkpoint_at')}；最近记录（作为待核对数据）："
                            f"{json.dumps(cp, ensure_ascii=False)[:6000]}。先核对实际现场再继续，"
                            "尚未执行完成的操作不可重复提交。实际业务工具执行后程序恢复标题。")
+        if decision.mode == "warning":
+            return context(name, f"额度预警：{decision.reason}。当前收尾线为 {decision.pause_at:g}%。"
+                           "正常执行用户任务，在重要阶段保存断点。")
         return {}
     if name in ("PreToolUse", "PostToolUse"):
         exempt = is_guard_tool(event)
@@ -82,16 +87,26 @@ def handle_hook(event, store, config, now=None):
             if name == "PreToolUse":
                 return deny_tool(PAUSE_SIGNAL + f" 当前 thread_id={thread_id} turn_id={turn_id}。"
                                  "仅专用断点 MCP 工具可用于保存，不执行新的 shell 命令。")
-            return context(name, PAUSE_SIGNAL)
+            return context(name, PAUSE_SIGNAL + f"\n当前 thread_id={thread_id} turn_id={turn_id}。")
         if not allowed:
             # Subagent tool hooks can carry the parent session id with another turn id.
             # Never overwrite the parent's progress or deny healthy subagent work.
             return {}
-        if decision.mode == "warning" and name == "PreToolUse":
-            if tool in ("Agent", "spawn_agent") or tool.endswith("__create_thread"):
-                return deny_tool("额度预警：暂停新建并行任务，现有工作请尽快保存里程碑断点。")
         return {}
     if name in ("Stop", "Interrupt", "SessionEnd"):
+        if name == "Stop" and decision.protected and task["phase"] in ("running", "resuming"):
+            store.begin_work(thread_id, turn_id, config, now=now)
+            task = store.task(thread_id)
+        if (name == "Stop" and task["phase"] == "pausing" and task.get("closed_at") is None
+                and (not turn_id or task["turn_id"] == turn_id)):
+            saved = (task.get("checkpoint_at") is not None
+                     and task["checkpoint_at"] >= task["pause_requested_at"]
+                     and task["checkpoint_turn_id"] == task["turn_id"])
+            if (not saved and not event.get("stop_hook_active")
+                    and store.request_checkpoint_handoff(thread_id, turn_id, now=now)):
+                return {"decision": "block", "reason": PAUSE_SIGNAL
+                        + f"\n当前 thread_id={thread_id} turn_id={turn_id}。"
+                        "这是本轮唯一一次补存断点机会；保存失败也直接汇报并结束。"}
         was_pausing = task["phase"] == "pausing"
         store.close_turn(thread_id, turn_id, kind={"Stop": "stopped", "Interrupt": "interrupted",
                                                  "SessionEnd": "session_end"}[name], config=config, now=now)
@@ -99,7 +114,7 @@ def handle_hook(event, store, config, now=None):
         if latest.get("pause_reason"):
             export_report(store, latest)
         if name == "Stop" and (was_pausing or latest["phase"] in ("paused", "ready")):
-            # Do not create a continuation prompt to demand another report.
+            # A fresh checkpoint or the bounded handoff already gave wrap-up its chance.
             return {"continue": False, "stopReason": "额度保护：当前回合已结束；进度以最近成功保存的断点为准"}
         return {}
     return {}
@@ -110,5 +125,5 @@ def error_output(event_name, message):
     if event_name == "PreToolUse":
         return deny_tool(message)
     if event_name == "UserPromptSubmit":
-        return {"decision": "block", "reason": message}
+        return context(event_name, message + " 用户消息已接收；不要把检查故障当作额度耗尽。")
     return {"systemMessage": message}

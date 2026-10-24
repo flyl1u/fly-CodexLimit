@@ -121,6 +121,40 @@ class InstallTests(unittest.TestCase):
         self.assertIn("real-hook-test", output["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(Store(self.home).task("real-hook-test")["cwd"], "D:/中文目录")
 
+    @unittest.skipUnless(os.name == "nt", "Windows Hook launcher")
+    def test_installed_hooks_deliver_warning_and_checkpoint_handoff_over_stdio(self):
+        install(self.home, self.codex, ENTRY)
+        hooks = json.loads((self.codex / "hooks.json").read_text(encoding="utf-8"))
+        store, config = Store(self.home), Config()
+
+        def invoke(name, **extra):
+            command = hooks["hooks"][name][0]["hooks"][0]["commandWindows"].split()
+            event = {"session_id": "native-flow", "turn_id": "turn", "hook_event_name": name, **extra}
+            result = subprocess.run(command, input=json.dumps(event), encoding="utf-8",
+                                    capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout) if result.stdout.strip() else {}
+
+        store.observe_quota(quota(83), config)
+        self.assertNotIn("decision", invoke("UserPromptSubmit"))
+        self.assertEqual(invoke("PreToolUse", tool_name="Bash", tool_input={}), {})
+        store.observe_quota(quota(95), config)
+        self.assertEqual(invoke("PreToolUse", tool_name="Bash", tool_input={})
+                         ["hookSpecificOutput"]["permissionDecision"], "deny")
+        handoff = invoke("Stop")
+        self.assertIn("codex-limit-checkpoint", handoff["reason"])
+        args = {"thread_id": "native-flow", "turn_id": "turn",
+                "checkpoint": {"current": "原生 Hook 验证现场", "next_step": "额度恢复后核对"}}
+        self.assertEqual(invoke("PreToolUse", tool_name="mcp__codex_limit_guard__save_checkpoint", tool_input=args), {})
+        wire = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "save_checkpoint", "arguments": args}}
+        saved = subprocess.run([sys.executable, str(ENTRY), "--home", str(self.home), "mcp"],
+                               input=json.dumps(wire) + "\n", encoding="utf-8", capture_output=True, timeout=10)
+        self.assertEqual(saved.returncode, 0, saved.stderr)
+        self.assertFalse(json.loads(saved.stdout)["result"]["isError"])
+        self.assertFalse(invoke("Stop", stop_hook_active=True)["continue"])
+        self.assertEqual(store.task("native-flow")["phase"], "paused")
+
 
 class CliTests(unittest.TestCase):
     def setUp(self):

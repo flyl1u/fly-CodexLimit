@@ -72,6 +72,8 @@ class RuntimeTests(unittest.TestCase):
         self.coordinator.reconcile_tasks(131)
         self.coordinator.reconcile_tasks(132)
         self.assertEqual(self.count("turn/steer"), 1)
+        steer = next(params for method, params in self.rpc.calls if method == "turn/steer")
+        self.assertIn("thread_id=task turn_id=turn", steer["input"][0]["text"])
         self.coordinator.reconcile_tasks(230)
         self.assertEqual(self.count("turn/interrupt"), 1)
         self.assertEqual(self.store.task("task")["phase"], "pausing")

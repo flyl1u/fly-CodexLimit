@@ -43,7 +43,9 @@
 - `stop` 请求使该后台进程退出，health.connected=false，并释放租约。
 - 登录启动脚本通过 PowerShell AST 解析，未向用户任务计划程序注册测试任务。
 - 安装/重复安装/卸载、外部配置编辑、失败回滚、事务恢复均在临时 Codex 配置目录验证。
-- 46 项自动化测试通过；收尾 Skill 通过 skill-creator 的 quick_validate.py。
+- 67 项自动化测试覆盖额度策略、生命周期及安装；收尾 Skill 通过 skill-creator 的 quick_validate.py。
+- Windows 原生命令验证了剩余 17% 的任务放行、5% 的业务工具保护、Stop 注入 Skill、
+  stdio MCP 保存断点及回合结束。该验证使用隔离状态与模拟额度，不启动模型。
 - Wheel 打包成功；在独立虚拟环境中安装后，从工作区以外启动 MCP、列出 3 个工具、
   读取打包 Skill、临时目录安装和卸载均成功。项目运行时仅使用 Python 标准库。
 
@@ -59,6 +61,8 @@
 - 桌面内置 CLI 的 hooks/list 返回 7 个已启用且受信任的事件，包含 Interrupt。
 - 已观察到真实 CLI 会话 SessionStart 的任务登记；该检查未提交模型请求。
 - 桌面内置 CLI 的 /mcp 显示 codex_limit_guard 已连接，提供 3 个工具。
+- 本轮修复后按用户要求重新启用，桌面 hooks/list 再次确认 7 个 Hook 均启用且受信任；
+  没有警告或错误，其他用户配置和信任哈希未变。
 
 桌面版已打开聊天需重新加载配置后才能使用新增集成。真实桌面 UI 对外部改名的
 刷新时机尚未验证；独立 App Server 无法强制中断桌面活动回合的边界保持不变。

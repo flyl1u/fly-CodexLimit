@@ -46,6 +46,8 @@ class HookTests(unittest.TestCase):
         output = self.invoke("PreToolUse", offset=31, tool_name="Bash", tool_input={"command": "save then delete"})
         self.assertEqual(output["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertNotIn("continue", output)
+        post = self.invoke("PostToolUse", offset=31, tool_name="Bash", tool_input={})
+        self.assertIn("thread_id=thread turn_id=turn", post["hookSpecificOutput"]["additionalContext"])
         args = {"thread_id": "thread", "turn_id": "turn", "checkpoint": {"current": "现场", "next_step": "核对"}}
         self.assertEqual(self.invoke("PreToolUse", offset=31, tool_name="mcp__codex_limit_guard__save_checkpoint", tool_input=args), {})
         saved = call_tool("save_checkpoint", args, self.store, self.cfg)
@@ -66,7 +68,9 @@ class HookTests(unittest.TestCase):
         self.pause()
         self.invoke("Stop", offset=31)
         blocked = self.invoke("UserPromptSubmit", offset=32, turn_id="new")
-        self.assertEqual(blocked["decision"], "block")
+        self.assertNotIn("decision", blocked)
+        self.assertIn("codex-limit-checkpoint", blocked["hookSpecificOutput"]["additionalContext"])
+        self.invoke("Stop", offset=33, turn_id="new", stop_hook_active=True)
         self.store.observe_quota(quota(10, reset=30000), self.cfg, now=self.now + 60)
         result = self.invoke("UserPromptSubmit", offset=61, turn_id="new")
         self.assertIn("additionalContext", result["hookSpecificOutput"])
@@ -74,13 +78,91 @@ class HookTests(unittest.TestCase):
         self.invoke("PostToolUse", offset=62, turn_id="new", tool_name="Bash", tool_input={})
         self.assertEqual(self.store.task("thread")["phase"], "running")
 
-    def test_warning_denies_spawn_and_new_round(self):
+    def test_warning_allows_new_tasks_and_parallel_work_at_seventeen_percent(self):
         self.invoke("UserPromptSubmit")
-        self.store.observe_quota(quota(82, reset=30000), self.cfg, now=self.now + 30)
-        blocked = self.invoke("PreToolUse", offset=31, tool_name="spawn_agent", tool_input={})
-        self.assertEqual(blocked["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.store.observe_quota(quota(83, reset=30000), self.cfg, now=self.now + 30)
+        self.assertEqual(self.invoke("PreToolUse", offset=31, tool_name="spawn_agent", tool_input={}), {})
         self.invoke("Stop", offset=32)
-        self.assertEqual(self.invoke("UserPromptSubmit", offset=33, turn_id="new")["decision"], "block")
+        result = self.invoke("UserPromptSubmit", offset=33, turn_id="new")
+        self.assertNotIn("decision", result)
+        self.assertIn("正常执行用户任务", result["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(self.store.task("thread")["turn_id"], "new")
+        self.assertEqual(self.store.task("thread")["phase"], "running")
+        self.assertEqual(self.invoke("PreToolUse", offset=34, turn_id="new", tool_name="Bash", tool_input={}), {})
+
+    def test_stop_hands_off_skill_once_before_closing_without_a_checkpoint(self):
+        self.pause()
+        result = self.invoke("Stop", offset=31)
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("codex-limit-checkpoint", result["reason"])
+        self.assertIn("checkpoint` 至少包含", result["reason"])
+        self.assertEqual(self.store.task("thread")["phase"], "pausing")
+        self.assertFalse(self.invoke("Stop", offset=32)["continue"])
+        self.assertEqual(self.store.task("thread")["phase"], "paused")
+
+    def test_successful_skill_checkpoint_closes_without_extra_continuation(self):
+        self.pause()
+        self.assertEqual(self.invoke("Stop", offset=31)["decision"], "block")
+        self.store.checkpoint("thread", {"current": "现场已保存", "next_step": "核对现场"}, "turn", now=self.now + 32)
+        result = self.invoke("Stop", offset=33, stop_hook_active=True)
+        self.assertFalse(result["continue"])
+        self.assertNotIn("decision", result)
+        self.assertEqual(self.store.task("thread")["phase"], "paused")
+
+    def test_prompt_during_protection_is_delivered_to_skill_and_can_save_checkpoint(self):
+        self.pause()
+        self.invoke("Stop", offset=31, stop_hook_active=True)
+        result = self.invoke("UserPromptSubmit", offset=32, turn_id="new")
+        self.assertNotIn("decision", result)
+        self.assertIn("用户消息已接收", result["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(self.store.task("thread")["turn_id"], "new")
+        args = {"thread_id": "thread", "turn_id": "new", "checkpoint": {"current": "新请求待续做", "next_step": "核对"}}
+        self.assertEqual(self.invoke("PreToolUse", offset=33, turn_id="new",
+                                     tool_name="mcp__codex_limit_guard__save_checkpoint", tool_input=args), {})
+        self.assertTrue(call_tool("save_checkpoint", args, self.store, self.cfg)["saved"])
+        self.assertEqual(self.invoke("PreToolUse", offset=34, turn_id="new", tool_name="Bash", tool_input={})
+                         ["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_stale_quota_does_not_reject_user_message(self):
+        result = self.invoke("UserPromptSubmit", offset=200)
+        self.assertNotIn("decision", result)
+        self.assertIn("额度缓存缺失或已过期", result["hookSpecificOutput"]["additionalContext"])
+
+    def test_new_user_turn_recovers_a_task_with_a_missing_stop_hook(self):
+        self.pause()
+        self.store.observe_quota(quota(10, reset=30000), self.cfg, now=self.now + 60)
+        self.assertEqual(self.store.task("thread")["phase"], "pausing")
+        result = self.invoke("UserPromptSubmit", offset=61, turn_id="new")
+        self.assertNotIn("decision", result)
+        self.assertEqual(self.store.task("thread")["phase"], "resuming")
+        self.assertEqual(self.invoke("PreToolUse", offset=62, turn_id="new", tool_name="Bash", tool_input={}), {})
+
+    def test_healthy_user_submission_updates_turn_but_child_tools_cannot(self):
+        self.invoke("UserPromptSubmit")
+        self.invoke("UserPromptSubmit", turn_id="new")
+        self.assertEqual(self.store.task("thread")["turn_id"], "new")
+        self.invoke("PreToolUse", turn_id="child", tool_name="Bash", tool_input={})
+        self.assertEqual(self.store.task("thread")["turn_id"], "new")
+
+    def test_resume_queue_does_not_reject_user_message(self):
+        self.pause()
+        self.invoke("Stop", offset=31, stop_hook_active=True)
+        self.store.observe_quota(quota(10, reset=30000), self.cfg, now=self.now + 60)
+        self.store.put_meta("last_resume_at", self.now + 60)
+        result = self.invoke("UserPromptSubmit", offset=61, turn_id="new")
+        self.assertNotIn("decision", result)
+        self.assertIn("续做已排队", result["hookSpecificOutput"]["additionalContext"])
+
+    def test_new_user_turn_can_execute_when_resuming_turn_lost_its_stop_hook(self):
+        self.pause()
+        self.invoke("Stop", offset=31, stop_hook_active=True)
+        self.store.observe_quota(quota(10, reset=30000), self.cfg, now=self.now + 60)
+        self.invoke("UserPromptSubmit", offset=61, turn_id="resume-one")
+        self.invoke("UserPromptSubmit", offset=62, turn_id="resume-two")
+        self.invoke("PostToolUse", offset=63, turn_id="resume-two", tool_name="Bash", tool_input={})
+        self.assertEqual(self.store.task("thread")["turn_id"], "resume-two")
+        self.assertEqual(self.store.task("thread")["phase"], "running")
+        self.assertIsNotNone(self.store.task("thread")["resume_started_at"])
 
     def test_subagent_turn_does_not_overwrite_parent_or_block_healthy_work(self):
         self.invoke("UserPromptSubmit")
@@ -92,7 +174,7 @@ class HookTests(unittest.TestCase):
 
     def test_check_failure_returns_valid_deny_shape(self):
         self.assertEqual(error_output("PreToolUse", "locked")["hookSpecificOutput"]["permissionDecision"], "deny")
-        self.assertEqual(error_output("UserPromptSubmit", "locked")["decision"], "block")
+        self.assertNotIn("decision", error_output("UserPromptSubmit", "locked"))
 
     def test_mcp_wire_roundtrip_and_tool_error(self):
         self.invoke("UserPromptSubmit")

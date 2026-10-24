@@ -104,6 +104,7 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(self.evaluate(quota(70), latched=True).mode, "normal")
 
     def test_concurrency_and_burn_raise_reserve(self):
+        self.cfg = Config(adaptive_reserve=True)
         self.assertEqual(self.evaluate(quota(91), active=3).mode, "protect")
         old = Snapshot.parse(quota(10), 70)
         value = self.evaluate(quota(25), previous=old)
@@ -112,7 +113,18 @@ class PolicyTests(unittest.TestCase):
         reset = self.evaluate(quota(25, reset=20000), previous=old)
         self.assertEqual(reset.pause_at, 5)
 
+    def test_default_thresholds_stay_fixed_despite_concurrency_and_burn(self):
+        old = Snapshot.parse(quota(10, 10), 70)
+        for used in (83, 90, 94):
+            with self.subTest(used=used):
+                value = self.evaluate(quota(used, 10), active=20, previous=old)
+                self.assertEqual(value.mode, "warning")
+                self.assertEqual(value.pause_at, 5)
+        self.assertEqual(self.evaluate(quota(95), active=20, previous=old).mode, "protect")
+        self.assertEqual(self.evaluate(quota(10, 98), active=20, previous=old).pause_at, 2)
+
     def test_burn_is_measured_per_window(self):
+        self.cfg = Config(adaptive_reserve=True)
         old = Snapshot.parse(quota(10, 97), 70)
         decision = self.evaluate(quota(11, 97), previous=old)
         self.assertEqual(decision.mode, "warning")
@@ -135,7 +147,7 @@ class PolicyTests(unittest.TestCase):
                        {"reserve_per_extra_task": -1}, {"resume_remaining": float("inf")},
                        {"five_hour_pause_remaining": -1}, {"five_hour_pause_remaining": 20},
                        {"five_hour_pause_remaining": True}, {"five_hour_pause_remaining": float("nan")},
-                       {"max_pause_remaining": 4}):
+                       {"max_pause_remaining": 4}, {"adaptive_reserve": "false"}):
             with self.assertRaises(ValueError):
                 Config(**params)
 
@@ -213,6 +225,26 @@ class StoreTests(unittest.TestCase):
         self.start()
         self.store.protect_if_stale(self.cfg, now=300)
         self.assertEqual(self.store.task("t")["phase"], "pausing")
+
+    def test_fresh_seventeen_percent_recovers_after_cache_outage(self):
+        self.start()
+        self.store.protect_if_stale(self.cfg, now=300)
+        decision = self.store.observe_quota(quota(83), self.cfg, now=301)
+        self.assertEqual(decision.mode, "warning")
+
+    def test_real_quota_latch_survives_cache_outage(self):
+        self.start()
+        self.store.observe_quota(quota(99), self.cfg, now=130)
+        self.store.protect_if_stale(self.cfg, now=300)
+        decision = self.store.observe_quota(quota(83), self.cfg, now=301)
+        self.assertEqual(decision.mode, "protect")
+
+    def test_disabling_adaptive_reserve_drops_only_the_old_threshold_latch(self):
+        adaptive = Config(adaptive_reserve=True)
+        self.store.observe_quota(quota(10), adaptive, now=110)
+        self.assertEqual(self.store.observe_quota(quota(83), adaptive, now=140).mode, "protect")
+        self.assertEqual(self.store.observe_quota(quota(83), self.cfg, now=141).mode, "warning")
+        self.assertEqual(self.store.observe_quota(quota(96), self.cfg, now=142).mode, "protect")
 
     def test_persistence_concurrent_hooks_and_single_daemon(self):
         def worker(index):

@@ -4,6 +4,7 @@
   "five_hour_pause_remaining": 5,
   "resume_remaining": 25,
   "reserve_per_extra_task": 2,
+  "adaptive_reserve": false,
   "max_pause_remaining": 60,
   "poll_seconds": 30,
   "grace_seconds": 90,

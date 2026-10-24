@@ -1,6 +1,7 @@
 """Account polling and metadata coordination; only verified live turns are controlled."""
 
 import json
+from pathlib import Path
 import threading
 import time
 import uuid
@@ -12,9 +13,11 @@ from .titles import mark_title, restore_title
 
 
 PAUSE_SIGNAL = (
-    "[CODEX_LIMIT_GUARD] 额度保护已触发。停止新增业务工作，调用 codex_limit_guard 的 "
-    "save_checkpoint 保存已完成、当前状态、剩余工作、验证结果和下一步，"
-    "然后输出简短进度报告并结束本轮。不要为了收尾创建新回合或并行分支。"
+    "[CODEX_LIMIT_GUARD] 额度保护已触发。现在应用 codex-limit-checkpoint Skill，"
+    "先简短说明正在保存断点，再按下列已注入的 Skill 正文执行；无需调用 shell 读取 Skill。"
+    "停止新增业务工作，保存断点后汇报并结束本轮。用户消息已接收，"
+    "尚未执行的请求写入 remaining，额度恢复后由用户续做。\n\n"
+    + (Path(__file__).parent / "skill" / "SKILL.md").read_text(encoding="utf-8")
 )
 
 
@@ -139,7 +142,8 @@ class Coordinator:
                         if task["steer_turn_id"] != task["turn_id"]:
                             self.rpc.request("turn/steer", {"threadId": task["thread_id"],
                                 "expectedTurnId": task["turn_id"],
-                                "input": [{"type": "text", "text": PAUSE_SIGNAL}]})
+                                "input": [{"type": "text", "text": PAUSE_SIGNAL
+                                           + f"\n当前 thread_id={task['thread_id']} turn_id={task['turn_id']}。"}]})
                             self.store.update_task(task["thread_id"], steer_turn_id=task["turn_id"])
                         if now - task["pause_requested_at"] >= self.config.grace_seconds and task["interrupt_turn_id"] != task["turn_id"]:
                             self.rpc.request("turn/interrupt", {"threadId": task["thread_id"], "turnId": task["turn_id"]})

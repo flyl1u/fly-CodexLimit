@@ -166,12 +166,21 @@ class Store:
             old_row = db.execute("SELECT snapshot FROM samples ORDER BY id DESC LIMIT 1").fetchone()
             previous = Snapshot.from_dict(json.loads(old_row[0])) if old_row else None
             old_decision = self._meta(db, "decision", {})
+            policy = {key: getattr(config, key) for key in (
+                "pause_remaining", "five_hour_pause_remaining", "resume_remaining", "adaptive_reserve",
+                "reserve_per_extra_task", "max_pause_remaining", "poll_seconds", "grace_seconds", "limit_ids")}
+            policy["limit_ids"] = list(policy["limit_ids"])
+            # Changing protection policy must not inherit a latch from an old threshold.
+            same_policy = self._meta(db, "quota_policy") == policy
+            latched = same_policy and self._meta(db, "quota_latched", old_decision.get("mode") == "protect")
             active = db.execute("SELECT COUNT(*) FROM tasks WHERE phase IN ('running','resuming','pausing')").fetchone()[0]
-            decision = decide(snapshot, previous, config, active,
-                              old_decision.get("mode") in ("protect", "unknown"), now)
+            decision = decide(snapshot, previous, config, active, latched, now)
             db.execute("INSERT INTO samples(observed_at,snapshot) VALUES (?,?)", (now, encode(snapshot.to_dict())))
             db.execute("DELETE FROM samples WHERE id < (SELECT MAX(id)-100 FROM samples)")
             self._put(db, "decision", decision.to_dict())
+            self._put(db, "quota_policy", policy)
+            # An outage pauses work but cannot manufacture a quota-recovery latch.
+            self._put(db, "quota_latched", latched if decision.mode == "unknown" else decision.mode == "protect")
             if old_decision.get("mode") != decision.mode:
                 self._event(db, now, None, "quota_mode", decision.to_dict())
             if decision.protected:
@@ -193,7 +202,7 @@ class Store:
                 db.execute("UPDATE tasks SET phase='paused' WHERE phase='ready'")
             return decision
 
-    def begin_work(self, thread_id, turn_id, config, now=None, tool=None, executed=False):
+    def begin_work(self, thread_id, turn_id, config, now=None, tool=None, executed=False, user_submitted=False):
         now = time.time() if now is None else now
         with self.transaction() as db:
             row = db.execute("SELECT * FROM tasks WHERE thread_id=?", (thread_id,)).fetchone()
@@ -202,11 +211,15 @@ class Store:
             decision = self._decision(db, config, now)
             if row["phase"] in ("paused", "ready", "pausing"):
                 return False
-            if row["phase"] in ("running", "resuming") and turn_id and row["turn_id"] and turn_id != row["turn_id"]:
+            if (not user_submitted and row["phase"] in ("running", "resuming")
+                    and turn_id and row["turn_id"] and turn_id != row["turn_id"]):
                 return False
             if row["phase"] != "resuming":
                 db.execute("UPDATE tasks SET phase='running',turn_id=?,closed_at=NULL WHERE thread_id=?",
                            (turn_id or row["turn_id"], thread_id))
+            elif user_submitted and turn_id:
+                db.execute("UPDATE tasks SET turn_id=?,resume_turn_id=?,closed_at=NULL WHERE thread_id=?",
+                           (turn_id, turn_id, thread_id))
             if decision.protected:
                 self._pause(db, thread_id, decision.reason, now)
                 return False
@@ -230,7 +243,14 @@ class Store:
             if decision.protected:
                 return False, decision.reason
             if row["phase"] == "pausing":
-                return False, "上一回合仍在收尾，等待 Stop/Interrupt 确认后再继续"
+                if not turn_id or turn_id == row["turn_id"]:
+                    return False, "上一回合仍在收尾，等待 Stop/Interrupt 确认后再继续"
+                # A new user turn after recovery is lifecycle evidence that the old
+                # turn ended, even when its closing Hook never reached this store.
+                db.execute("""UPDATE tasks SET phase='ready',closed_at=?,closure_kind='new_user_turn'
+                    WHERE thread_id=?""", (now, thread_id))
+                self._event(db, now, thread_id, "turn_closed", {"kind": "new_user_turn", "phase": "ready"})
+                row = db.execute("SELECT * FROM tasks WHERE thread_id=?", (thread_id,)).fetchone()
             if row["phase"] not in ("paused", "ready"):
                 return True, ""
             # Expired queued requests don't reserve slots indefinitely.
@@ -251,6 +271,33 @@ class Store:
             self._put(db, "last_resume_at", now)
             self._event(db, now, thread_id, "resume_admitted")
             return True, ""
+
+    def begin_checkpoint_turn(self, thread_id, turn_id, reason, now=None):
+        """Accept a user message during protection without admitting business work."""
+        now = time.time() if now is None else now
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM tasks WHERE thread_id=?", (thread_id,)).fetchone()
+            if row is None:
+                raise ValueError("任务尚未注册")
+            if row["phase"] == "pausing" and row["turn_id"] == turn_id:
+                return
+            db.execute("""UPDATE tasks SET phase='pausing',turn_id=?,pause_turn_id=?,
+                pause_requested_at=?,pause_reason=?,closed_at=NULL,closure_kind=NULL,
+                resume_requested_at=NULL,resume_started_at=NULL WHERE thread_id=?""",
+                       (turn_id, turn_id, now, reason, thread_id))
+            self._event(db, now, thread_id, "checkpoint_turn", {"turn_id": turn_id})
+
+    def request_checkpoint_handoff(self, thread_id, turn_id, now=None):
+        """At most one Stop continuation per turn, including duplicate hook calls."""
+        now = time.time() if now is None else now
+        with self.transaction() as db:
+            key = f"checkpoint_handoff:{thread_id}"
+            previous = self._meta(db, key)
+            if previous and previous["turn_id"] == turn_id:
+                return False
+            self._put(db, key, {"turn_id": turn_id, "at": now})
+            self._event(db, now, thread_id, "checkpoint_handoff", {"turn_id": turn_id})
+            return True
 
     def checkpoint(self, thread_id, data, turn_id=None, now=None):
         if not isinstance(data, dict):
