@@ -100,7 +100,7 @@ def handle_hook(event, store, config, now=None):
             export_report(store, latest)
         if name == "Stop" and (was_pausing or latest["phase"] in ("paused", "ready")):
             # Do not create a continuation prompt to demand another report.
-            return {"continue": False, "stopReason": "额度保护：当前回合已结束，断点已保存到本地"}
+            return {"continue": False, "stopReason": "额度保护：当前回合已结束；进度以最近成功保存的断点为准"}
         return {}
     return {}
 

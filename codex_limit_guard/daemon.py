@@ -73,6 +73,8 @@ class Coordinator:
         thread = self.read_thread(task["thread_id"], include_turns=True)
         for turn in thread.get("turns", []):
             if turn.get("id") == task["turn_id"]:
+                if turn.get("status") == "inProgress" and thread.get("status", {}).get("type") != "active":
+                    return None
                 return turn
         return None
 

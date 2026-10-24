@@ -19,6 +19,7 @@ class FakeRpc:
         self.loaded = set()
         self.title = "测试任务"
         self.turn_status = "inProgress"
+        self.thread_status = "active"
         self.fail_write = False
 
     def drain(self):
@@ -31,6 +32,7 @@ class FakeRpc:
             return {"data": list(self.loaded)}
         if method == "thread/read":
             return {"thread": {"id": params["threadId"], "name": self.title,
+                               "status": {"type": self.thread_status},
                                "turns": [{"id": "turn", "status": self.turn_status}]}}
         if method == "thread/name/set":
             self.title = params["name"]
@@ -77,6 +79,13 @@ class RuntimeTests(unittest.TestCase):
         self.coordinator.reconcile_tasks(231)
         self.assertEqual(self.store.task("task")["phase"], "paused")
         self.assertEqual(self.rpc.title, "❗ 测试任务")
+
+    def test_loaded_but_inactive_thread_is_not_treated_as_live_control(self):
+        self.rpc.loaded.add("task")
+        self.rpc.thread_status = "idle"
+        self.coordinator.reconcile_tasks(300)
+        self.assertEqual(self.count("turn/interrupt"), 0)
+        self.assertEqual(self.count("turn/steer"), 0)
 
     def test_title_write_crash_recovers_ownership_and_preserves_user_rename(self):
         self.store.close_turn("task", "turn", config=self.cfg, now=131)
@@ -156,7 +165,8 @@ class TransportTests(unittest.TestCase):
         self.assertIsNotNone(rpc.process.poll())
 
     def test_timeout_and_disconnect(self):
-        with RpcClient(self.command(), timeout=0.1) as rpc:
+        with RpcClient(self.command(), timeout=2) as rpc:
+            rpc.timeout = 0.1
             with self.assertRaisesRegex(RpcError, "超时"):
                 rpc.request("hang")
             with self.assertRaises(RpcError):
