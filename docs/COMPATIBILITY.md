@@ -10,6 +10,7 @@
 检查发现桌面版 App Server 以独立进程运行，没有 `--listen` 参数。
 系统 CLI 的 `app-server daemon version` 明确报错：daemon 生命周期仅支持 Unix。
 因此 Windows 的 `app-server proxy` 命令存在，不代表已有可连接的桌面控制 socket。
+两个本机版本的 `features list` 均将 `hooks` 列为 `stable / true`。
 
 ## 实现约束
 
