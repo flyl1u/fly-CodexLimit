@@ -168,7 +168,8 @@ class Coordinator:
         payload = self.rpc.request("account/rateLimits/read", {})
         decision = self.store.observe_quota(payload, self.config, now=now)
         errors = self.reconcile_tasks(now)
-        self.store.put_meta("health", {"at": now, "connected": True, "error": None, "task_errors": len(errors)})
+        self.store.put_meta("health", {"at": now, "connected": True, "error": None, "task_errors": len(errors),
+                                      "protection": self.store.protection_summary(self.config, now)})
         return decision
 
 

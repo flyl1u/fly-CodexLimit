@@ -4,6 +4,7 @@ import json
 
 from .daemon import PAUSE_SIGNAL
 from .report import export_report
+from .protocol import INSTRUCTIONS
 
 
 GUARD_TOOLS = {
@@ -30,7 +31,7 @@ def is_guard_tool(event):
     if not isinstance(args, dict):
         return False
     if name.endswith("__status"):
-        return not args
+        return not args or (set(args) == {"thread_id"} and args["thread_id"] == event.get("session_id"))
     return (args.get("thread_id") == event.get("session_id")
             and (not args.get("turn_id") or args["turn_id"] == event.get("turn_id")))
 
@@ -44,13 +45,14 @@ def handle_hook(event, store, config, now=None):
     if not isinstance(thread_id, str) or not thread_id:
         return {"systemMessage": "Limit Guard 未收到 session_id，无法登记此次 Hook"}
     store.register(thread_id, cwd=event.get("cwd") or "", now=now)
+    store.record_hook(thread_id, name or "unknown", turn_id, now=now)
     decision = store.decision(config, now=now)
     task = store.task(thread_id)
     if name == "SessionStart":
         return context(name, (
-            f"Codex Limit Guard 已启用；thread_id={thread_id}。"
+            f"Codex Limit Guard 协议已加载；thread_id={thread_id}。"
             "收到 [CODEX_LIMIT_GUARD] 时应用 codex-limit-checkpoint Skill，"
-            "只保存断点、简短汇报并结束本轮；续做时先核对断点和实际文件。"
+            "只保存断点、简短汇报并结束本轮；续做时先核对断点和实际文件。\n" + INSTRUCTIONS
         ))
     if name == "UserPromptSubmit":
         if decision.protected:

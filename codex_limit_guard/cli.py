@@ -33,6 +33,8 @@ def parser():
     commands.add_parser("stop", help="通知本状态目录的守护程序退出")
     status = commands.add_parser("status", help="查看缓存额度、任务和最近错误")
     status.add_argument("--json", action="store_true")
+    status.add_argument("--thread", help="核对指定聊天本回合的真实 Hook 回调")
+    status.add_argument("--require-verified", action="store_true", help="缺少新鲜回调时返回退出码 2；需配合 --thread")
     doctor = commands.add_parser("doctor", help="检查配置与能力；--live 只读连接真实 Codex")
     doctor.add_argument("--live", action="store_true")
     doctor.add_argument("--thread", help="只读检查一个已知聊天的元数据及运行时归属")
@@ -82,6 +84,9 @@ def doctor(home, config, live=False, thread_id=None):
         result["entrypoint_exists"] = Path(manifest["entrypoint"]).is_file()
     else:
         result["installed"] = False
+    if thread_id:
+        result["hook_coverage"] = Store(home).hook_coverage(thread_id)
+        result["protection_verified"] = result["hook_coverage"]["verified"]
     return result
 
 
@@ -143,17 +148,26 @@ def main(argv=None):
             store.put_meta("stop_requested_at", time.time())
             emit({"stop_requested": True, "home": str(home)})
         elif args.command == "status":
+            if args.require_verified and not args.thread:
+                raise ValueError("--require-verified 需配合 --thread，不能把账户连接当作聊天保护证明")
             decision = store.decision(config)
             tasks = store.tasks()
             health = store.get_meta("health")
+            coverage = store.hook_coverage(args.thread, stale_seconds=config.stale_seconds) if args.thread else None
             if args.json:
                 emit({"decision": decision.to_dict(), "health": health, "task_errors": store.get_meta("task_errors", []),
+                      "hook_coverage": coverage,
+                      "protection": store.protection_summary(config),
                       "tasks": [{k: t[k] for k in ("thread_id", "title", "phase", "checkpoint_at", "pause_reason")} for t in tasks]})
             else:
                 print(f"额度状态：{decision.mode}；{decision.reason}")
                 print(f"守护程序：{json.dumps(health, ensure_ascii=False) if health else '尚未启动'}")
                 for task in tasks:
                     print(f"{task['phase']:10} {task['thread_id']}  {task.get('title') or ''}")
+                if coverage:
+                    print(f"聊天保护核验：{coverage['state']}；{coverage['reason']}")
+            if args.require_verified and not coverage["verified"]:
+                return 2
         elif args.command == "checkpoint":
             if args.input:
                 payload = json.loads(sys.stdin.read(32769) if args.input == "-" else Path(args.input).read_text(encoding="utf-8-sig"))

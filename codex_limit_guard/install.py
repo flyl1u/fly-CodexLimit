@@ -10,6 +10,7 @@ import tomllib
 
 from . import __version__
 from .files import atomic_json, atomic_text
+from .protocol import AGENTS_BLOCK, AGENTS_START
 
 
 EVENTS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Interrupt", "SessionEnd")
@@ -35,7 +36,7 @@ def _write(path, text):
 
 def _allowed_paths(home, codex_home):
     return {p.resolve() for p in (
-        codex_home / "hooks.json", codex_home / "config.toml",
+        codex_home / "hooks.json", codex_home / "config.toml", codex_home / "AGENTS.md",
         codex_home / "skills" / "codex-limit-checkpoint" / "SKILL.md",
         home / "installation.json",
     )}
@@ -162,19 +163,33 @@ def install(home, codex_home, entrypoint, dry_run=False):
     existing_skill = read_text(skill_path)
     if existing_skill is not None and (not previous or fingerprint(existing_skill) != previous["skill_hash"]):
         raise ValueError("同名 Skill 已存在或被手动修改，未覆盖")
+    agents_path = codex_home / "AGENTS.md"
+    agents_raw = read_text(agents_path)
+    agents = agents_raw or ""
+    if previous and previous.get("agents_block"):
+        if previous["agents_block"] not in agents:
+            raise ValueError("全局 AGENTS.md 中的额度保护块被修改，保留现场")
+        agents = agents.replace(previous["agents_block"], "", 1)
+    if AGENTS_START in agents:
+        raise ValueError("存在未知的全局额度保护说明，保留 AGENTS.md")
+    agents += AGENTS_BLOCK
     manifest = {"version": __version__, "codex_home": str(codex_home), "entrypoint": str(entrypoint),
                 "groups": groups, "mcp_block": block, "skill_hash": fingerprint(skill),
+                "agents_block": AGENTS_BLOCK,
+                "original_agents": previous.get("original_agents", agents_raw) if previous else agents_raw,
                 "original_hooks": previous["original_hooks"] if previous else hooks_raw,
                 "original_config": previous["original_config"] if previous else config_raw}
     result = {"codex_home": str(codex_home), "home": str(home), "hook_events": list(EVENTS),
-              "skill": str(skill_path), "trust_required": True, "dry_run": dry_run}
+              "skill": str(skill_path), "fallback_instructions": str(agents_path),
+              "reload_required": True, "verification_required": "status --thread THREAD --require-verified",
+              "trust_required": not previous or previous["groups"] != groups, "dry_run": dry_run}
     if not dry_run:
         # Keep the original inputs in a durable, local backup before editing.
         if not (home / "install-backup.json").exists():
             atomic_json(home / "install-backup.json", {"hooks": hooks_raw, "config": config_raw})
         apply_transaction(home, codex_home, [
             (hooks_path, json.dumps(hooks_doc, ensure_ascii=False, indent=2) + "\n"),
-            (config_path, config), (skill_path, skill),
+            (config_path, config), (skill_path, skill), (agents_path, agents),
             (manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"),
         ])
     return result
@@ -204,6 +219,14 @@ def uninstall(home, codex_home):
     skill = read_text(skill_path)
     keep_skill = skill is not None and fingerprint(skill) != manifest["skill_hash"]
     changes = [(hooks_path, new_hooks), (config_path, new_config), (manifest_path, None)]
+    if manifest.get("agents_block"):
+        agents_path = codex_home / "AGENTS.md"
+        agents = read_text(agents_path) or ""
+        if manifest["agents_block"] not in agents:
+            raise ValueError("全局 AGENTS.md 中的额度保护块被修改，保留现场")
+        agents = agents.replace(manifest["agents_block"], "", 1)
+        original_agents = manifest.get("original_agents")
+        changes.append((agents_path, original_agents if agents == (original_agents or "") else agents))
     if not keep_skill:
         changes.append((skill_path, None))
     apply_transaction(home, codex_home, changes)

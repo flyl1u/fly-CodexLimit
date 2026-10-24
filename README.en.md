@@ -83,13 +83,30 @@ python guard.py install --dry-run
 python guard.py install
 ```
 
-The installer adds user-level Hooks, the `codex_limit_guard` MCP server, and the
-`codex-limit-checkpoint` Skill. It preserves unrelated configuration.
+The installer adds user-level Hooks, the `codex_limit_guard` MCP server, the
+`codex-limit-checkpoint` Skill, and a removable block in global `AGENTS.md`.
+The block asks agents to check local quota at each user turn, before writes, and
+after about 60 seconds of work, even if a Hook signal is missing. Normal checks stay quiet.
+It preserves unrelated configuration.
 
 **Review and trust the Hook definitions in Codex**, using the startup review screen
 or `/hooks` in the CLI. Codex skips untrusted Hooks; installing files alone does not
-activate them. Reopen the target chats so the updated configuration can load.
+activate them. Fully quit and reopen Codex after this upgrade: existing desktop
+chats can retain disabled Hook state. Checking a separate CLI does not refresh them.
 See the [official Hook trust documentation](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks).
+
+While the target chat is working, verify actual callbacks from another terminal:
+
+```powershell
+python guard.py status --thread YOUR_THREAD_ID --require-verified --json
+```
+
+Exit 0 requires fresh prompt and pre-tool callbacks for the current turn; exit 2
+means unverified. Registration, old callbacks and MCP checkpoints are not proof.
+`health.connected` describes the account connection; `protection` reports callback
+coverage of registered tasks separately. The global instruction block is a
+cooperative fallback for missing Hooks, not a guarantee that the model follows it.
+The independent server cannot hot-reload or forcibly interrupt desktop turns.
 
 To start automatically at sign-in:
 
@@ -208,7 +225,7 @@ python -m compileall -q codex_limit_guard guard.py
 python -m pip wheel . --no-deps --wheel-dir .guard-local/dist
 ```
 
-The 67 tests cover quota windows, hysteresis, concurrent writes, schema upgrades, resume
+The 76 tests cover quota windows, hysteresis, concurrent writes, schema upgrades, resume
 admission, Hook decisions, native Windows launch commands, MCP, title ownership,
 RPC timeout/disconnection, and reversible installation. Windows account reads, daemon
 startup/shutdown, and isolated wheel installation have also been verified.

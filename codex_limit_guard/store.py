@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS samples (
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY, at REAL NOT NULL, thread_id TEXT, kind TEXT NOT NULL, detail TEXT
 );
+CREATE TABLE IF NOT EXISTS hook_receipts (
+    thread_id TEXT NOT NULL, event TEXT NOT NULL, turn_id TEXT,
+    received_at REAL NOT NULL, PRIMARY KEY(thread_id,event)
+);
 """
 
 
@@ -114,6 +118,44 @@ class Store:
     def tasks(self):
         with self.connect() as db:
             return [dict(r) for r in db.execute("SELECT * FROM tasks ORDER BY last_event_at DESC")]
+
+    def record_hook(self, thread_id, event, turn_id=None, now=None):
+        """Only the actual Hook entry point writes these receipts, never MCP calls."""
+        now = time.time() if now is None else now
+        with self.transaction() as db:
+            db.execute("""INSERT INTO hook_receipts VALUES (?,?,?,?)
+                ON CONFLICT(thread_id,event) DO UPDATE SET
+                turn_id=excluded.turn_id,received_at=excluded.received_at
+                WHERE excluded.received_at >= hook_receipts.received_at""",
+                       (thread_id, event, turn_id, now))
+
+    def hook_coverage(self, thread_id, now=None, stale_seconds=120):
+        now = time.time() if now is None else now
+        task = self.task(thread_id)
+        with self.connect() as db:
+            receipts = {r["event"]: dict(r) for r in db.execute(
+                "SELECT * FROM hook_receipts WHERE thread_id=?", (thread_id,))}
+        turn = task.get("turn_id") if task else None
+        current = {name: r for name, r in receipts.items() if turn and r["turn_id"] == turn}
+        prompt = current.get("UserPromptSubmit")
+        tool = current.get("PreToolUse")
+        verified = bool(prompt and tool and task["closed_at"] is None
+                        and tool["received_at"] >= prompt["received_at"]
+                        and 0 <= now - tool["received_at"] <= stale_seconds)
+        return {"thread_id": thread_id, "turn_id": turn, "verified": verified,
+                "state": "verified" if verified else "unverified",
+                "reason": "本回合已收到提交和工具前置回调" if verified else
+                          "缺少本回合真实回调；安装、信任和旧回调不能证明本回合受保护",
+                "receipts": receipts}
+
+    def protection_summary(self, config, now=None):
+        active = [t for t in self.tasks() if t["phase"] in ("running", "resuming", "pausing")]
+        unverified = [t["thread_id"] for t in active
+                      if not self.hook_coverage(t["thread_id"], now, config.stale_seconds)["verified"]]
+        return {"mode": "cooperative", "registered_active": len(active),
+                "unverified_threads": unverified,
+                "callbacks_verified": bool(active) and not unverified,
+                "runtime_control_requested": config.control_active_turns}
 
     def update_task(self, thread_id, **values):
         if not values:

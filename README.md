@@ -73,11 +73,24 @@ python guard.py install
 安装 `codex-limit-checkpoint` Skill，保留其他已有配置。
 随后在支持 `/hooks` 的 Codex CLI 中审核并信任这些 Hook 定义，重新打开要保护的聊天。
 官方机制要求非托管 Hook 获得信任后才能运行；程序不会更改信任记录或绕过审核。
-桌面版是否已经加载，以 `status --json` 中出现真实任务登记、工具事件和断点为准。
+安装器还会向全局 `AGENTS.md` 加入可卸载的额度检查协议：每轮开始、写入前及连续工作
+约 60 秒后主动查询本地额度，Hook 漏回调时仍有模型协作兜底。正常时不提醒。
+桌面版已有聊天可能缓存了禁用的 Hook；更新后须完全退出并重新打开 Codex。
+仅切换聊天或在独立 CLI 中查看启用状态，不能证明旧聊天已刷新。
 [官方 Hook 信任说明](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)。
 
-安装会同时配置 Hooks、专用 MCP 与收尾 Skill。请重新打开要保护的聊天，使新配置加载。
-仅在安装或 Hook 定义变更后需要重新审核；日常监控不会反复要求信任。
+安装会同时配置 Hooks、专用 MCP、收尾 Skill 与全局检查协议。
+仅在安装或 Hook 定义变更后需要重新审核；本次修复保留 Hook 命令，已有信任仍有效。
+聊天工作时在另一终端执行以下核验；退出码 0 表示本回合同时收到新鲜的提交和工具前置回调，
+退出码 2 表示未验证。旧登记、旧回调、MCP 查询及断点均不算 Hook 生效证据。
+
+```powershell
+python guard.py status --thread YOUR_THREAD_ID --require-verified --json
+```
+
+`health.connected` 只表示账户连接。`protection` 单独列出已登记任务的回调覆盖，
+不会发现所有未登记的聊天；全局检查协议用于补上这个缺口，也不保证模型一定执行。
+独立 App Server 无法给桌面旧回合热加载配置或提供强制中断，不能宣称完整硬保护。
 
 只有完成安装、信任并加载 Hook 的会话才受保护。已经执行中的命令仍可能继续运行；
 后台命令及结果应写入断点，恢复时先核实现场。
@@ -192,7 +205,7 @@ python -m compileall -q codex_limit_guard guard.py
 python -m pip wheel . --no-deps --wheel-dir .guard-local/dist
 ```
 
-67 项测试覆盖额度窗口、滞回、并发写入、数据库升级、恢复排队、工具准入、
+76 项测试覆盖额度窗口、滞回、并发写入、数据库升级、恢复排队、工具准入、
 真实 Windows Hook 命令、MCP 协议、标题所有权、RPC 断线/超时、安装回滚和卸载合并。
 真实账户验证只调用只读接口，不启动模型回合，不修改真实聊天标题。
 

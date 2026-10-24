@@ -26,8 +26,9 @@ TOOLS = [
     {"name": "read_checkpoint", "description": "读取最近保存的断点、时间和任务阶段；恢复前核对实际现场。",
      "inputSchema": {"type": "object", "additionalProperties": False, "required": ["thread_id"],
                      "properties": IDENTITY}},
-    {"name": "status", "description": "读取本地缓存中的额度保护状态，不联网。",
-     "inputSchema": {"type": "object", "additionalProperties": False, "properties": {}}},
+    {"name": "status", "description": "每轮开始、写入前及连续工作60秒后检查额度；protect/unknown时保存断点并结束。只读本地缓存，不联网。",
+     "inputSchema": {"type": "object", "additionalProperties": False,
+                     "properties": {"thread_id": {"type": "string"}}}},
 ]
 
 
@@ -35,9 +36,17 @@ def call_tool(name, arguments, store, config):
     if not isinstance(arguments, dict):
         raise ValueError("arguments 必须为对象")
     if name == "status":
-        if arguments:
-            raise ValueError("status 不接受参数")
-        return store.decision(config).to_dict()
+        if set(arguments) - {"thread_id"} or ("thread_id" in arguments and not isinstance(arguments["thread_id"], str)):
+            raise ValueError("status 只接受可选的字符串 thread_id")
+        decision = store.decision(config)
+        result = decision.to_dict()
+        result["action"] = "save_checkpoint_and_stop" if decision.protected else "continue"
+        if decision.protected:
+            from .daemon import PAUSE_SIGNAL
+            result["signal"] = PAUSE_SIGNAL
+        if arguments.get("thread_id"):
+            result["hook_coverage"] = store.hook_coverage(arguments["thread_id"], stale_seconds=config.stale_seconds)
+        return result
     if name not in ("save_checkpoint", "read_checkpoint"):
         raise ValueError("未知工具")
     allowed = {"thread_id", "turn_id", "checkpoint"} if name == "save_checkpoint" else {"thread_id", "turn_id"}
@@ -46,7 +55,11 @@ def call_tool(name, arguments, store, config):
     thread = arguments.get("thread_id")
     task = store.task(thread) if isinstance(thread, str) else None
     if task is None:
-        raise ValueError("聊天尚未通过 Hook 登记；先确认 Hook 已加载并受信任")
+        if name != "save_checkpoint":
+            raise ValueError("聊天尚未登记；先确认 Hook 已加载并受信任")
+        # A missing Hook must not prevent the fallback from saving progress.
+        # Registering via MCP deliberately creates no Hook receipt or pause proof.
+        store.register(thread)
     if name == "save_checkpoint":
         store.checkpoint(thread, arguments.get("checkpoint"), arguments.get("turn_id"))
         task = store.task(thread)

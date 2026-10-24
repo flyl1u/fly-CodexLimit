@@ -186,6 +186,21 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
 
+    def test_chat_verification_requires_actual_current_hook_receipts(self):
+        store = Store(self.home)
+        store.observe_quota(quota(), Config())
+        args = ("status", "--json", "--thread", "chat", "--require-verified")
+        self.assertEqual(self.run_cli(*args).returncode, 2)
+        for event in ("UserPromptSubmit", "PreToolUse"):
+            output = self.run_cli("hook", data=json.dumps({"session_id": "chat", "turn_id": "turn",
+                "hook_event_name": event, "tool_name": "Bash", "tool_input": {}}))
+            self.assertEqual(output.returncode, 0, output.stderr)
+        result = self.run_cli(*args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)["hook_coverage"]["verified"])
+        self.run_cli("hook", data=json.dumps({"session_id": "chat", "turn_id": "turn", "hook_event_name": "Stop"}))
+        self.assertEqual(self.run_cli(*args).returncode, 2)
+
     def test_demo_never_connects_to_codex(self):
         output = Path(self.temp.name) / "demo"
         result = self.run_cli("demo", "--output", str(output))
