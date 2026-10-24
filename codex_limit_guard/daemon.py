@@ -1,6 +1,7 @@
 """Account polling and metadata coordination; only verified live turns are controlled."""
 
 import json
+import threading
 import time
 import uuid
 
@@ -168,6 +169,28 @@ def run_daemon(store, config, stop_event, once=False, client_factory=RpcClient):
     lease_ttl = max(60, config.poll_seconds * 3, config.rpc_timeout_seconds * 5)
     if not store.acquire_lease(owner, lease_ttl):
         raise RuntimeError("此状态目录已有守护程序，拒绝重复启动")
+    started_at = time.time()
+    heartbeat_stop = threading.Event()
+    lease_lost = threading.Event()
+
+    def heartbeat():
+        # Renew independently of RPC delays; a large task list must not lose its lease.
+        while not heartbeat_stop.wait(1):
+            try:
+                if store.get_meta("stop_requested_at", 0) >= started_at:
+                    stop_event.set()
+                if not store.acquire_lease(owner, lease_ttl):
+                    lease_lost.set()
+                    stop_event.set()
+                    return
+            except Exception:
+                # An unavailable state store cannot safely coordinate more mutations.
+                lease_lost.set()
+                stop_event.set()
+                return
+
+    watchdog = threading.Thread(target=heartbeat, daemon=True)
+    watchdog.start()
     backoff = 1.0
     try:
         while not stop_event.is_set():
@@ -191,5 +214,10 @@ def run_daemon(store, config, stop_event, once=False, client_factory=RpcClient):
                 backoff = min(30, backoff * 2)
                 if not store.acquire_lease(owner, lease_ttl):
                     raise RuntimeError("守护程序租约已丢失")
+        if lease_lost.is_set():
+            raise RuntimeError("守护程序租约续期失败，已停止协调")
     finally:
+        heartbeat_stop.set()
+        watchdog.join(timeout=2)
+        store.put_meta("health", {"at": time.time(), "connected": False, "error": "守护程序已退出"})
         store.release_lease(owner)

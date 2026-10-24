@@ -1,6 +1,7 @@
 """Minimal stdio MCP tools for a shell-free checkpoint escape path."""
 
 import json
+import sqlite3
 
 from . import __version__
 from .report import export_report
@@ -85,7 +86,7 @@ def serve(store, config, input_stream, output_stream):
                 try:
                     value = call_tool(params.get("name"), params.get("arguments", {}), store, config)
                     result = {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}], "isError": False}
-                except (ValueError, OSError, KeyError) as exc:
+                except (ValueError, OSError, KeyError, sqlite3.Error) as exc:
                     result = {"content": [{"type": "text", "text": str(exc)}], "isError": True}
             else:
                 send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}})
