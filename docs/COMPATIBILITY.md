@@ -35,5 +35,21 @@
 持久化标题读接口已验证；真实桌面 UI 对外部元数据改名的刷新时机仍需实际启用时验证。
 保护与恢复状态机、改名写入及失败重试用隔离的模拟运行时做集成测试。
 
+## Windows 启动与安装验证
+
+- 生成的 commandWindows 在 Windows PowerShell 原生执行，含空格/中文的状态目录
+  和中文 cwd 往返不丢失；不依赖当前工作目录。
+- 启动后台脚本后，从真实账户取得完整额度快照，health.connected=true。
+- `stop` 请求使该后台进程退出，health.connected=false，并释放租约。
+- 登录启动脚本通过 PowerShell AST 解析，未向用户任务计划程序注册测试任务。
+- 安装/重复安装/卸载、外部配置编辑、失败回滚、事务恢复均在临时 Codex 配置目录验证。
+- 46 项自动化测试通过；收尾 Skill 通过 skill-creator 的 quick_validate.py。
+- Wheel 打包成功；在独立虚拟环境中安装后，从工作区以外启动 MCP、列出 3 个工具、
+  读取打包 Skill、临时目录安装和卸载均成功。项目运行时仅使用 Python 标准库。
+
+尚未全局安装本项目，不影响当前正在运行的真实聊天。
+用户完成安装并信任 Hooks 后，需以真实聊天的事件登记和断点写入确认桌面端加载情况；
+独立 App Server 无法对本机桌面活动回合强制中断的边界保持不变。
+
 官方参考：[Hooks](https://learn.chatgpt.com/docs/hooks)、
 [App Server](https://learn.chatgpt.com/docs/app-server)。

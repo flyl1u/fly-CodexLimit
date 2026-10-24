@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "codex-limit-guard"
 version = "0.1.0"
 description = "Local quota protection, checkpoints and resume coordination for Codex"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 

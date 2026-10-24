@@ -1,0 +1,17 @@
+{
+  "warn_remaining": 20,
+  "pause_remaining": 10,
+  "resume_remaining": 25,
+  "reserve_per_extra_task": 2,
+  "max_pause_remaining": 60,
+  "poll_seconds": 30,
+  "grace_seconds": 90,
+  "stale_seconds": 120,
+  "resume_spacing_seconds": 15,
+  "resume_slot_seconds": 120,
+  "rpc_timeout_seconds": 15,
+  "title_prefix": "❗ ",
+  "limit_ids": [],
+  "server_command": ["codex", "app-server"],
+  "control_active_turns": false
+}
