@@ -89,8 +89,7 @@ python guard.py install
 ## 平常怎么用
 
 正常状态 Hook 只检查本地 SQLite，安静退出。会话开始时注入简短协议，
-模型在重要里程碑使用 `codex_limit_guard.save_checkpoint` 保存进度。
-剩余 20% 仅提示保存进度，仍可发送任务及执行工作。进入保护后，用户消息仍会送达，
+达到保护线后才要求任务保存断点。进入保护后，用户消息仍会送达，
 Hook 注入完整的 `codex-limit-checkpoint` Skill 正文，让任务保存断点并简短汇报。
 业务工具暂停，专用 MCP 仍可保存/读取断点及查询状态。若回合结束前尚未保存当前断点，
 Stop Hook 最多请求一次收尾续写；保存后或续写已执行即结束，不循环消耗额度。
@@ -126,7 +125,6 @@ python guard.py doctor --live --thread YOUR_THREAD_ID
 
 | 配置 | 默认值 | 用途 |
 | --- | --- | --- |
-| `warn_remaining` | 20 | 仅提示保存进度，不拦截用户消息或业务工具 |
 | `pause_remaining` | 2 | 周额度及其他窗口的基础收尾线，按剩余百分比判断 |
 | `five_hour_pause_remaining` | 5 | 存在 5 小时额度时，该窗口的基础收尾线，按剩余百分比判断 |
 | `resume_remaining` | 25 | 恢复滞回线，避免刚恢复就再次暂停 |

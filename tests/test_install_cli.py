@@ -122,7 +122,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(Store(self.home).task("real-hook-test")["cwd"], "D:/中文目录")
 
     @unittest.skipUnless(os.name == "nt", "Windows Hook launcher")
-    def test_installed_hooks_deliver_warning_and_checkpoint_handoff_over_stdio(self):
+    def test_installed_hooks_stay_quiet_until_checkpoint_protection_over_stdio(self):
         install(self.home, self.codex, ENTRY)
         hooks = json.loads((self.codex / "hooks.json").read_text(encoding="utf-8"))
         store, config = Store(self.home), Config()
@@ -136,7 +136,7 @@ class InstallTests(unittest.TestCase):
             return json.loads(result.stdout) if result.stdout.strip() else {}
 
         store.observe_quota(quota(83), config)
-        self.assertNotIn("decision", invoke("UserPromptSubmit"))
+        self.assertEqual(invoke("UserPromptSubmit"), {})
         self.assertEqual(invoke("PreToolUse", tool_name="Bash", tool_input={}), {})
         store.observe_quota(quota(95), config)
         self.assertEqual(invoke("PreToolUse", tool_name="Bash", tool_input={})
@@ -170,8 +170,11 @@ class CliTests(unittest.TestCase):
 
     def test_init_status_and_invalid_config(self):
         self.assertEqual(self.run_cli("init").returncode, 0)
+        self.assertNotIn("warn_remaining", json.loads((self.home / "config.json").read_text(encoding="utf-8")))
         status = self.run_cli("status", "--json")
         self.assertEqual(json.loads(status.stdout)["decision"]["mode"], "unknown")
+        (self.home / "config.json").write_text('{"warn_remaining": 20}', encoding="utf-8")
+        self.assertEqual(self.run_cli("status", "--json").returncode, 0)
         (self.home / "config.json").write_text('{"pause_remaining": 50}', encoding="utf-8")
         result = self.run_cli("status")
         self.assertEqual(result.returncode, 1)

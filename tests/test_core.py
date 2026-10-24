@@ -31,12 +31,12 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(self.evaluate(value).limiting_window, "other/primary")
 
     def test_five_hour_and_weekly_threshold_boundaries(self):
-        for used, expected in ((94.99, "warning"), (95, "protect"), (95.01, "protect")):
+        for used, expected in ((94.99, "normal"), (95, "protect"), (95.01, "protect")):
             with self.subTest(window="five-hour", used=used):
                 decision = self.evaluate(quota(used))
                 self.assertEqual(decision.mode, expected)
                 self.assertEqual(decision.pause_at, 5)
-        for used, expected in ((97.99, "warning"), (98, "protect"), (98.01, "protect")):
+        for used, expected in ((97.99, "normal"), (98, "protect"), (98.01, "protect")):
             with self.subTest(window="weekly", used=used):
                 decision = self.evaluate(quota(10, used))
                 self.assertEqual(decision.mode, expected)
@@ -48,7 +48,7 @@ class PolicyTests(unittest.TestCase):
                 with self.subTest(name=name, duration=duration):
                     window = {"usedPercent": 97, "windowDurationMins": duration}
                     payload = {"rateLimits": {name: window}}
-                    self.assertEqual(self.evaluate(payload).mode, "warning")
+                    self.assertEqual(self.evaluate(payload).mode, "normal")
                     window["usedPercent"] = 98
                     decision = self.evaluate(payload)
                     self.assertEqual(decision.mode, "protect")
@@ -99,7 +99,7 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(self.evaluate(quota(100, reset=1), latched=True).mode, "protect")
 
     def test_hysteresis(self):
-        self.assertEqual(self.evaluate(quota(82)).mode, "warning")
+        self.assertEqual(self.evaluate(quota(82)).mode, "normal")
         self.assertEqual(self.evaluate(quota(82), latched=True).mode, "protect")
         self.assertEqual(self.evaluate(quota(70), latched=True).mode, "normal")
 
@@ -118,7 +118,7 @@ class PolicyTests(unittest.TestCase):
         for used in (83, 90, 94):
             with self.subTest(used=used):
                 value = self.evaluate(quota(used, 10), active=20, previous=old)
-                self.assertEqual(value.mode, "warning")
+                self.assertEqual(value.mode, "normal")
                 self.assertEqual(value.pause_at, 5)
         self.assertEqual(self.evaluate(quota(95), active=20, previous=old).mode, "protect")
         self.assertEqual(self.evaluate(quota(10, 98), active=20, previous=old).pause_at, 2)
@@ -127,7 +127,7 @@ class PolicyTests(unittest.TestCase):
         self.cfg = Config(adaptive_reserve=True)
         old = Snapshot.parse(quota(10, 97), 70)
         decision = self.evaluate(quota(11, 97), previous=old)
-        self.assertEqual(decision.mode, "warning")
+        self.assertEqual(decision.mode, "normal")
         self.assertEqual(decision.limiting_window, "codex/secondary")
         self.assertEqual(decision.pause_at, 2)
 
@@ -145,7 +145,7 @@ class PolicyTests(unittest.TestCase):
     def test_configuration_rejects_invalid_thresholds(self):
         for params in ({"poll_seconds": 0}, {"pause_remaining": 30}, {"stale_seconds": 1},
                        {"reserve_per_extra_task": -1}, {"resume_remaining": float("inf")},
-                       {"five_hour_pause_remaining": -1}, {"five_hour_pause_remaining": 20},
+                       {"five_hour_pause_remaining": -1}, {"five_hour_pause_remaining": 25},
                        {"five_hour_pause_remaining": True}, {"five_hour_pause_remaining": float("nan")},
                        {"max_pause_remaining": 4}, {"adaptive_reserve": "false"}):
             with self.assertRaises(ValueError):
@@ -230,7 +230,7 @@ class StoreTests(unittest.TestCase):
         self.start()
         self.store.protect_if_stale(self.cfg, now=300)
         decision = self.store.observe_quota(quota(83), self.cfg, now=301)
-        self.assertEqual(decision.mode, "warning")
+        self.assertEqual(decision.mode, "normal")
 
     def test_real_quota_latch_survives_cache_outage(self):
         self.start()
@@ -243,7 +243,7 @@ class StoreTests(unittest.TestCase):
         adaptive = Config(adaptive_reserve=True)
         self.store.observe_quota(quota(10), adaptive, now=110)
         self.assertEqual(self.store.observe_quota(quota(83), adaptive, now=140).mode, "protect")
-        self.assertEqual(self.store.observe_quota(quota(83), self.cfg, now=141).mode, "warning")
+        self.assertEqual(self.store.observe_quota(quota(83), self.cfg, now=141).mode, "normal")
         self.assertEqual(self.store.observe_quota(quota(96), self.cfg, now=142).mode, "protect")
 
     def test_persistence_concurrent_hooks_and_single_daemon(self):

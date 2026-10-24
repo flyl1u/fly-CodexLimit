@@ -120,11 +120,9 @@ def decide(snapshot: Snapshot | None, previous: Snapshot | None, config: Config,
         label = f"{window.bucket}/{window.name}"
         if snapshot.reached or remaining <= pause_at or (latched and remaining < resume_at):
             mode, reason = "protect", f"{label} 剩余 {remaining:g}%，保留收尾额度"
-        elif remaining <= max(config.warn_remaining, pause_at + 5):
-            mode, reason = "warning", f"{label} 剩余 {remaining:g}%，建议保存进度；仍可继续任务"
         else:
             mode, reason = "normal", "额度充足"
         decisions.append(Decision(mode, reason, remaining, pause_at, resume_at, observed, label))
     # Compare every window against its own threshold before choosing the cause.
-    priority = {"protect": 0, "warning": 1, "normal": 2}
+    priority = {"protect": 0, "normal": 1}
     return min(decisions, key=lambda d: (priority[d.mode], d.remaining - (d.resume_at if latched else d.pause_at)))

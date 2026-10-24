@@ -78,14 +78,13 @@ class HookTests(unittest.TestCase):
         self.invoke("PostToolUse", offset=62, turn_id="new", tool_name="Bash", tool_input={})
         self.assertEqual(self.store.task("thread")["phase"], "running")
 
-    def test_warning_allows_new_tasks_and_parallel_work_at_seventeen_percent(self):
+    def test_seventeen_percent_is_silent_for_new_tasks_and_parallel_work(self):
         self.invoke("UserPromptSubmit")
         self.store.observe_quota(quota(83, reset=30000), self.cfg, now=self.now + 30)
         self.assertEqual(self.invoke("PreToolUse", offset=31, tool_name="spawn_agent", tool_input={}), {})
         self.invoke("Stop", offset=32)
         result = self.invoke("UserPromptSubmit", offset=33, turn_id="new")
-        self.assertNotIn("decision", result)
-        self.assertIn("正常执行用户任务", result["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(result, {})
         self.assertEqual(self.store.task("thread")["turn_id"], "new")
         self.assertEqual(self.store.task("thread")["phase"], "running")
         self.assertEqual(self.invoke("PreToolUse", offset=34, turn_id="new", tool_name="Bash", tool_input={}), {})

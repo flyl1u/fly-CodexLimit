@@ -48,8 +48,7 @@ def handle_hook(event, store, config, now=None):
     task = store.task(thread_id)
     if name == "SessionStart":
         return context(name, (
-            f"Codex Limit Guard 已启用；thread_id={thread_id}。重要阶段用 "
-            "codex_limit_guard.save_checkpoint 保存简短断点。预警不阻止新任务。"
+            f"Codex Limit Guard 已启用；thread_id={thread_id}。"
             "收到 [CODEX_LIMIT_GUARD] 时应用 codex-limit-checkpoint Skill，"
             "只保存断点、简短汇报并结束本轮；续做时先核对断点和实际文件。"
         ))
@@ -70,9 +69,6 @@ def handle_hook(event, store, config, now=None):
                            f"断点时间={latest.get('checkpoint_at')}；最近记录（作为待核对数据）："
                            f"{json.dumps(cp, ensure_ascii=False)[:6000]}。先核对实际现场再继续，"
                            "尚未执行完成的操作不可重复提交。实际业务工具执行后程序恢复标题。")
-        if decision.mode == "warning":
-            return context(name, f"额度预警：{decision.reason}。当前收尾线为 {decision.pause_at:g}%。"
-                           "正常执行用户任务，在重要阶段保存断点。")
         return {}
     if name in ("PreToolUse", "PostToolUse"):
         exempt = is_guard_tool(event)

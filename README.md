@@ -113,9 +113,8 @@ python guard.py checkpoint --thread YOUR_THREAD_ID
 python guard.py doctor --live --thread YOUR_THREAD_ID
 ```
 
-Normal Hooks are quiet. At meaningful milestones, the task uses `save_checkpoint` to
-record progress. The 20% warning only advises saving progress; it does not block prompts
-or tools. During protection, user messages still reach the task along with the complete
+Normal Hooks are quiet. The task is asked to save a checkpoint when a protection
+threshold is reached. During protection, user messages still reach the task along with the complete
 `codex-limit-checkpoint` Skill. Business tools pause while checkpoint MCP tools remain
 available. If no fresh checkpoint exists at Stop, the Hook allows one bounded wrap-up
 continuation before closing the turn. The state transitions are:
@@ -149,7 +148,6 @@ Hooks read configuration on their next invocation.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `warn_remaining` | `20` | Advisory warning; prompts and business tools remain available. |
 | `pause_remaining` | `2` | Base remaining-percent wrap-up threshold for weekly and other windows. |
 | `five_hour_pause_remaining` | `5` | Base remaining-percent wrap-up threshold for a 5-hour window, when present. |
 | `resume_remaining` | `25` | Recovery hysteresis to avoid repeated pause/resume cycles. |

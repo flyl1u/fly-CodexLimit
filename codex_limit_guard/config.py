@@ -25,7 +25,6 @@ def runtime_environment(home: Path) -> dict:
 
 @dataclass(frozen=True)
 class Config:
-    warn_remaining: float = 20
     pause_remaining: float = 2
     five_hour_pause_remaining: float = 5
     resume_remaining: float = 25
@@ -46,7 +45,7 @@ class Config:
 
     def __post_init__(self):
         for name in (
-            "warn_remaining", "pause_remaining", "five_hour_pause_remaining", "resume_remaining",
+            "pause_remaining", "five_hour_pause_remaining", "resume_remaining",
             "reserve_per_extra_task", "max_pause_remaining", "poll_seconds",
             "grace_seconds", "stale_seconds", "resume_spacing_seconds",
             "resume_slot_seconds", "rpc_timeout_seconds",
@@ -54,10 +53,10 @@ class Config:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ValueError(f"{name} 必须是有限数字")
-        if not 0 <= self.pause_remaining < self.warn_remaining < self.resume_remaining <= 100:
-            raise ValueError("阈值必须满足 0 <= pause < warn < resume <= 100")
-        if not 0 <= self.five_hour_pause_remaining < self.warn_remaining:
-            raise ValueError("5 小时阈值必须满足 0 <= five_hour_pause < warn")
+        if not 0 <= self.pause_remaining < self.resume_remaining <= 100:
+            raise ValueError("阈值必须满足 0 <= pause < resume <= 100")
+        if not 0 <= self.five_hour_pause_remaining < self.resume_remaining:
+            raise ValueError("5 小时阈值必须满足 0 <= five_hour_pause < resume")
         if not max(self.pause_remaining, self.five_hour_pause_remaining) <= self.max_pause_remaining < 95:
             raise ValueError("max_pause_remaining 必须不低于两种收尾线且小于 95")
         if self.reserve_per_extra_task < 0:
@@ -86,6 +85,8 @@ class Config:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
         if not isinstance(data, dict):
             raise ValueError("配置必须是 JSON 对象")
+        # Silently migrate old configuration; quota reminders no longer exist.
+        data.pop("warn_remaining", None)
         unknown = set(data) - {f.name for f in fields(cls)}
         if unknown:
             raise ValueError(f"未知配置项: {', '.join(sorted(unknown))}")
