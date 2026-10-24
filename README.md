@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-**Save your progress before Codex runs out of quota. Resume from a checkpoint when you are ready.**
+**Save your progress before Codex runs out of quota automatically. Resume from a checkpoint when you are ready.**
 
 Python 3.11+ · Windows first · Standard-library runtime · [MIT](LICENSE)
 
