@@ -11,8 +11,9 @@ from codex_limit_guard.titles import mark_title, restore_title
 
 def quota(used=10, weekly=None, reset=10000):
     return {"rateLimitsByLimitId": {"codex": {
-        "primary": {"usedPercent": used, "resetsAt": reset},
-        "secondary": None if weekly is None else {"usedPercent": weekly, "resetsAt": 20000},
+        "primary": {"usedPercent": used, "resetsAt": reset, "windowDurationMins": 300},
+        "secondary": None if weekly is None else {
+            "usedPercent": weekly, "resetsAt": 20000, "windowDurationMins": 10080},
     }}}
 
 
@@ -24,10 +25,68 @@ class PolicyTests(unittest.TestCase):
         return decide(Snapshot.parse(payload, now), previous, self.cfg, active, latched, now)
 
     def test_weekly_limit_and_multi_bucket_win(self):
-        self.assertEqual(self.evaluate(quota(20, 96)).mode, "protect")
+        self.assertEqual(self.evaluate(quota(20, 98)).mode, "protect")
         value = quota()
         value["rateLimitsByLimitId"]["other"] = {"primary": {"usedPercent": 99}}
         self.assertEqual(self.evaluate(value).limiting_window, "other/primary")
+
+    def test_five_hour_and_weekly_threshold_boundaries(self):
+        for used, expected in ((94.99, "warning"), (95, "protect"), (95.01, "protect")):
+            with self.subTest(window="five-hour", used=used):
+                decision = self.evaluate(quota(used))
+                self.assertEqual(decision.mode, expected)
+                self.assertEqual(decision.pause_at, 5)
+        for used, expected in ((97.99, "warning"), (98, "protect"), (98.01, "protect")):
+            with self.subTest(window="weekly", used=used):
+                decision = self.evaluate(quota(10, used))
+                self.assertEqual(decision.mode, expected)
+                self.assertEqual(decision.pause_at, 2)
+
+    def test_weekly_only_uses_two_percent_even_in_primary(self):
+        for name in ("primary", "secondary"):
+            for duration in (10080, None):
+                with self.subTest(name=name, duration=duration):
+                    window = {"usedPercent": 97, "windowDurationMins": duration}
+                    payload = {"rateLimits": {name: window}}
+                    self.assertEqual(self.evaluate(payload).mode, "warning")
+                    window["usedPercent"] = 98
+                    decision = self.evaluate(payload)
+                    self.assertEqual(decision.mode, "protect")
+                    self.assertEqual(decision.pause_at, 2)
+
+    def test_window_with_less_remaining_cannot_hide_another_breached_threshold(self):
+        decision = self.evaluate(quota(96, 97))
+        self.assertEqual(decision.mode, "protect")
+        self.assertEqual(decision.limiting_window, "codex/primary")
+        self.assertEqual(decision.pause_at, 5)
+        payload = quota(10, 96)
+        bucket = payload["rateLimitsByLimitId"]["codex"]
+        bucket["primary"], bucket["secondary"] = bucket["secondary"], bucket["primary"]
+        bucket["secondary"]["usedPercent"] = 95
+        decision = self.evaluate(payload)
+        self.assertEqual(decision.mode, "protect")
+        self.assertEqual(decision.limiting_window, "codex/secondary")
+        self.assertEqual(decision.pause_at, 5)
+
+    def test_window_durations_survive_cache_and_old_samples_still_load(self):
+        snapshot = Snapshot.parse(quota(20, 30), 100)
+        self.assertEqual(Snapshot.from_dict(snapshot.to_dict()), snapshot)
+        legacy = Snapshot.from_dict({"observed_at": 100, "windows": [
+            {"bucket": "codex", "name": "primary", "used": 98, "resets_at": 10000}]})
+        self.assertIsNone(legacy.windows[0].duration_minutes)
+        self.assertEqual(decide(legacy, None, self.cfg, 1, False, 100).pause_at, 2)
+
+    def test_invalid_window_duration_is_unknown(self):
+        for duration in (True, 0, -300, 300.5, "300"):
+            payload = quota()
+            payload["rateLimitsByLimitId"]["codex"]["primary"]["windowDurationMins"] = duration
+            with self.subTest(duration=duration):
+                self.assertEqual(self.evaluate(payload).mode, "unknown")
+
+    def test_five_hour_threshold_is_configurable_independently(self):
+        self.cfg = Config(pause_remaining=1, five_hour_pause_remaining=3)
+        self.assertEqual(self.evaluate(quota(97)).pause_at, 3)
+        self.assertEqual(self.evaluate(quota(10, 99)).pause_at, 1)
 
     def test_missing_invalid_and_stale_data_never_means_zero_usage(self):
         for raw in ({}, {"rateLimits": None}, quota(None), quota(float("nan")), quota(True)):
@@ -45,13 +104,25 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(self.evaluate(quota(70), latched=True).mode, "normal")
 
     def test_concurrency_and_burn_raise_reserve(self):
-        self.assertEqual(self.evaluate(quota(87), active=3).mode, "protect")
+        self.assertEqual(self.evaluate(quota(91), active=3).mode, "protect")
         old = Snapshot.parse(quota(10), 70)
         value = self.evaluate(quota(25), previous=old)
         self.assertEqual(value.pause_at, 60)
         # Never calculate burn across a reset.
         reset = self.evaluate(quota(25, reset=20000), previous=old)
-        self.assertEqual(reset.pause_at, 10)
+        self.assertEqual(reset.pause_at, 5)
+
+    def test_burn_is_measured_per_window(self):
+        old = Snapshot.parse(quota(10, 97), 70)
+        decision = self.evaluate(quota(11, 97), previous=old)
+        self.assertEqual(decision.mode, "warning")
+        self.assertEqual(decision.limiting_window, "codex/secondary")
+        self.assertEqual(decision.pause_at, 2)
+
+    def test_recovery_requires_all_windows_to_clear_their_own_hysteresis(self):
+        self.assertEqual(self.evaluate(quota(70, 76), latched=True).mode, "protect")
+        self.assertEqual(self.evaluate(quota(76, 70), latched=True).mode, "protect")
+        self.assertEqual(self.evaluate(quota(75, 75), latched=True).mode, "normal")
 
     def test_legacy_and_explicit_reached(self):
         self.assertEqual(self.evaluate({"rateLimits": {"primary": {"usedPercent": 5}}}).mode, "normal")
@@ -61,7 +132,10 @@ class PolicyTests(unittest.TestCase):
 
     def test_configuration_rejects_invalid_thresholds(self):
         for params in ({"poll_seconds": 0}, {"pause_remaining": 30}, {"stale_seconds": 1},
-                       {"reserve_per_extra_task": -1}, {"resume_remaining": float("inf")}):
+                       {"reserve_per_extra_task": -1}, {"resume_remaining": float("inf")},
+                       {"five_hour_pause_remaining": -1}, {"five_hour_pause_remaining": 20},
+                       {"five_hour_pause_remaining": True}, {"five_hour_pause_remaining": float("nan")},
+                       {"max_pause_remaining": 4}):
             with self.assertRaises(ValueError):
                 Config(**params)
 

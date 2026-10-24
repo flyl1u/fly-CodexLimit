@@ -12,8 +12,9 @@ from .store import Store
 
 
 def quota(used, reset):
-    return {"rateLimitsByLimitId": {"codex": {"primary": {"usedPercent": used, "resetsAt": reset},
-                                              "secondary": {"usedPercent": used, "resetsAt": reset + 10000}}}}
+    return {"rateLimitsByLimitId": {"codex": {
+        "primary": {"usedPercent": used, "resetsAt": reset, "windowDurationMins": 300},
+        "secondary": {"usedPercent": used, "resetsAt": reset + 10000, "windowDurationMins": 10080}}}}
 
 
 class MemoryRuntime:

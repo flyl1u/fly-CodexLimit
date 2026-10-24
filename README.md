@@ -144,7 +144,8 @@ Hooks read configuration on their next invocation.
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `warn_remaining` | `20` | Remaining-percent warning line; defer new rounds and parallel branches. |
-| `pause_remaining` | `10` | Base wrap-up reserve. |
+| `pause_remaining` | `2` | Base remaining-percent wrap-up threshold for weekly and other windows. |
+| `five_hour_pause_remaining` | `5` | Base remaining-percent wrap-up threshold for a 5-hour window, when present. |
 | `resume_remaining` | `25` | Recovery hysteresis to avoid repeated pause/resume cycles. |
 | `reserve_per_extra_task` | `2` | Additional percentage-point reserve per extra active task. |
 | `max_pause_remaining` | `60` | Upper bound on the dynamic protection threshold. |
@@ -156,10 +157,17 @@ Hooks read configuration on their next invocation.
 | `limit_ids` | `[]` | Inspect all returned buckets by default, or explicitly select relevant ones. |
 | `control_active_turns` | `false` | Enable only with a connection to the same active runtime. |
 
-The dynamic reserve is the base threshold plus concurrent-task reserve and recent usage
-growth over the polling and wrap-up interval, capped at `max_pause_remaining`. Usage growth
-is measured between consecutive samples and never carried across a reset. The tightest
-relevant quota window wins; a reset timestamp alone is not evidence of recovery.
+The default base protection thresholds are **2% remaining for the weekly window** and
+**5% remaining for a 5-hour window**, when present. Accounts without a 5-hour window use
+the weekly 2% threshold. Windows are identified by their reported duration, rather than
+assuming `primary` always means 5 hours; missing duration uses the 2% fallback.
+
+Each window is checked against its own threshold, and any breached window triggers
+protection. Its dynamic reserve adds concurrent-task reserve and that window's recent
+usage growth over the polling and wrap-up interval, capped at `max_pause_remaining`.
+Usage growth is measured between consecutive samples and never carried across a reset
+or a window-duration change. Recovery requires every relevant window to clear its
+recovery line; a reset timestamp alone is not evidence of recovery.
 These thresholds are estimates and cannot guarantee enough quota for every wrap-up.
 
 `server_command` defaults to `["codex", "app-server"]`. On Windows, the npm shim is
