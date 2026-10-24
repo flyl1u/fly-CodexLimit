@@ -47,9 +47,21 @@
 - Wheel 打包成功；在独立虚拟环境中安装后，从工作区以外启动 MCP、列出 3 个工具、
   读取打包 Skill、临时目录安装和卸载均成功。项目运行时仅使用 Python 标准库。
 
-尚未全局安装本项目，不影响当前正在运行的真实聊天。
-用户完成安装并信任 Hooks 后，需以真实聊天的事件登记和断点写入确认桌面端加载情况；
-独立 App Server 无法对本机桌面活动回合强制中断的边界保持不变。
+## 用户级启用验证
+
+2026-10-24 已按用户要求启用到本机：
+
+- 安装用户级 Hooks、专用断点 MCP 与 codex-limit-checkpoint Skill。
+- 守护程序在后台运行，真实账户查询正常。
+- 当前用户的 CodexLimitGuard 登录启动任务已注册。
+- 通过 Codex 原生启动审核界面信任本项目定义，没有更改私有信任记录或绕过审核。
+- 系统 CLI 的 hooks/list 返回 6 个已启用且受信任的事件。
+- 桌面内置 CLI 的 hooks/list 返回 7 个已启用且受信任的事件，包含 Interrupt。
+- 已观察到真实 CLI 会话 SessionStart 的任务登记；该检查未提交模型请求。
+- 桌面内置 CLI 的 /mcp 显示 codex_limit_guard 已连接，提供 3 个工具。
+
+桌面版已打开聊天需重新加载配置后才能使用新增集成。真实桌面 UI 对外部改名的
+刷新时机尚未验证；独立 App Server 无法强制中断桌面活动回合的边界保持不变。
 
 官方参考：[Hooks](https://learn.chatgpt.com/docs/hooks)、
 [App Server](https://learn.chatgpt.com/docs/app-server)。

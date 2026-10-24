@@ -1,0 +1,16 @@
+{
+  "description": "Quota protection and resumable checkpoints for Codex, with coordinated pauses and title markers. | Codex 额度保护与断点续作，支持多任务协调暂停和标题标记。",
+  "topics": [
+    "codex",
+    "openai-codex",
+    "quota-management",
+    "rate-limits",
+    "checkpointing",
+    "mcp",
+    "hooks",
+    "python",
+    "windows",
+    "task-resumption",
+    "developer-tools"
+  ]
+}
