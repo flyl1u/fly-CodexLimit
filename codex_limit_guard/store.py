@@ -151,7 +151,7 @@ class Store:
         if row and row["phase"] in ("running", "resuming"):
             db.execute("""UPDATE tasks SET phase='pausing',pause_requested_at=?,pause_reason=?,
                 pause_turn_id=turn_id,closed_at=NULL,closure_kind=NULL,
-                marker_done=0,resume_requested_at=NULL,resume_started_at=NULL,
+                resume_requested_at=NULL,resume_started_at=NULL,
                 steer_turn_id=NULL,interrupt_turn_id=NULL WHERE thread_id=?""", (now, reason, thread_id))
             Store._event(db, now, thread_id, "pause_requested", {"reason": reason})
 
@@ -197,6 +197,8 @@ class Store:
                 raise ValueError("任务尚未注册")
             decision = self._decision(db, config, now)
             if row["phase"] in ("paused", "ready", "pausing"):
+                return False
+            if row["phase"] in ("running", "resuming") and turn_id and row["turn_id"] and turn_id != row["turn_id"]:
                 return False
             if row["phase"] != "resuming":
                 db.execute("UPDATE tasks SET phase='running',turn_id=?,closed_at=NULL WHERE thread_id=?",
