@@ -11,6 +11,7 @@ import tomllib
 from . import __version__
 from .files import atomic_json, atomic_text
 from .protocol import AGENTS_BLOCK, AGENTS_START
+from .control import disable
 
 
 EVENTS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Interrupt", "SessionEnd")
@@ -198,6 +199,7 @@ def install(home, codex_home, entrypoint, dry_run=False):
 def uninstall(home, codex_home):
     home, codex_home = Path(home).resolve(), Path(codex_home).resolve()
     recover_install(home, codex_home)
+    disable(home, "用户卸载保护")
     manifest_path = home / "installation.json"
     if not manifest_path.exists():
         return {"removed": False, "reason": "没有本程序的安装记录"}

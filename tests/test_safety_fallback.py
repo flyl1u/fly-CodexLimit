@@ -63,11 +63,12 @@ class FallbackTests(unittest.TestCase):
         self.assertTrue(Path(saved["report_path"]).is_file())
         self.assertEqual(self.store.hook_coverage("missing")["receipts"], {})
 
-    def test_unknown_quota_also_requires_checkpoint_and_stop(self):
+    def test_unknown_quota_continues_without_checkpoint_or_signal(self):
         other = Store(self.root / "empty")
         output = call_tool("status", {}, other, self.cfg)
         self.assertEqual(output["mode"], "unknown")
-        self.assertEqual(output["action"], "save_checkpoint_and_stop")
+        self.assertEqual(output["action"], "continue")
+        self.assertNotIn("signal", output)
 
     def test_status_exemption_is_scoped_to_current_chat(self):
         self.store.observe_quota(quota(95), self.cfg, now=100)
@@ -87,7 +88,7 @@ class FallbackTests(unittest.TestCase):
 
     def test_start_protocol_contains_independent_preflight(self):
         output = self.hook("SessionStart")["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("即使未收到 Hook 信号", output)
+        self.assertIn("action=save_checkpoint_and_stop", output)
         self.assertIn("mode=unknown", output)
 
     def test_global_fallback_update_and_uninstall_preserve_user_instructions(self):

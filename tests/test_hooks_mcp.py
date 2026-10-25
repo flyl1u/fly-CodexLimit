@@ -125,7 +125,8 @@ class HookTests(unittest.TestCase):
     def test_stale_quota_does_not_reject_user_message(self):
         result = self.invoke("UserPromptSubmit", offset=200)
         self.assertNotIn("decision", result)
-        self.assertIn("额度缓存缺失或已过期", result["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(result, {})
+        self.assertEqual(self.store.task("thread")["phase"], "running")
 
     def test_new_user_turn_recovers_a_task_with_a_missing_stop_hook(self):
         self.pause()
@@ -171,9 +172,9 @@ class HookTests(unittest.TestCase):
         self.invoke("PostToolUse", turn_id="child-turn", tool_name="Bash", tool_input={})
         self.assertEqual(self.store.task("thread")["turn_id"], "turn")
 
-    def test_check_failure_returns_valid_deny_shape(self):
-        self.assertEqual(error_output("PreToolUse", "locked")["hookSpecificOutput"]["permissionDecision"], "deny")
-        self.assertNotIn("decision", error_output("UserPromptSubmit", "locked"))
+    def test_monitor_failure_does_not_deny_work(self):
+        self.assertEqual(error_output("PreToolUse", "locked"), {})
+        self.assertEqual(error_output("UserPromptSubmit", "locked"), {})
 
     def test_mcp_wire_roundtrip_and_tool_error(self):
         self.invoke("UserPromptSubmit")
@@ -191,7 +192,7 @@ class HookTests(unittest.TestCase):
         serve(self.store, self.cfg, source, target)
         replies = [json.loads(line) for line in target.getvalue().splitlines()]
         self.assertEqual(len(replies), 4)
-        self.assertEqual(len(replies[1]["result"]["tools"]), 3)
+        self.assertEqual(len(replies[1]["result"]["tools"]), 4)
         self.assertFalse(replies[2]["result"]["isError"])
         self.assertTrue(replies[3]["result"]["isError"])
 

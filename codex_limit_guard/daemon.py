@@ -10,10 +10,13 @@ from .report import export_report
 from .config import runtime_environment
 from .rpc import RpcClient, RpcError
 from .titles import mark_title, restore_title
+from .control import disabled
 
 
 PAUSE_SIGNAL = (
-    "[CODEX_LIMIT_GUARD] 额度保护已触发。现在应用 codex-limit-checkpoint Skill，"
+    "[CODEX_LIMIT_GUARD] 已确认触及额度保护线。用户明确要求停用、卸载或停用后修复时，"
+    "优先调用 codex_limit_guard.disable_guard，成功后继续用户请求，不进入收尾流程。"
+    "其他情况现在应用 codex-limit-checkpoint Skill，"
     "先简短说明正在保存断点，再按下列已注入的 Skill 正文执行；无需调用 shell 读取 Skill。"
     "停止新增业务工作，保存断点后汇报并结束本轮。用户消息已接收，"
     "尚未执行的请求写入 remaining，额度恢复后由用户续做。\n\n"
@@ -129,6 +132,9 @@ class Coordinator:
         self.store.put_meta(f"title_error:{thread_id}", None)
 
     def reconcile_tasks(self, now):
+        if disabled(self.store.home):
+            return []
+        self.store.release_unverified_holds(self.config, now)
         loaded = self.loaded_ids() if self.config.control_active_turns else set()
         errors = []
         for task in self.store.tasks():
@@ -163,6 +169,8 @@ class Coordinator:
 
     def tick(self, now=None):
         now = time.time() if now is None else now
+        if disabled(self.store.home):
+            return self.store.decision(self.config, now)
         self.consume_events(now)
         # A partial notification is not a complete account snapshot: poll all buckets.
         payload = self.rpc.request("account/rateLimits/read", {})
@@ -174,6 +182,8 @@ class Coordinator:
 
 
 def run_daemon(store, config, stop_event, once=False, client_factory=RpcClient):
+    if disabled(store.home):
+        return store.decision(config)
     owner = str(uuid.uuid4())
     runtime_env = runtime_environment(store.home)
     lease_ttl = max(60, config.poll_seconds * 3, config.rpc_timeout_seconds * 5)
@@ -187,7 +197,7 @@ def run_daemon(store, config, stop_event, once=False, client_factory=RpcClient):
         # Renew independently of RPC delays; a large task list must not lose its lease.
         while not heartbeat_stop.wait(1):
             try:
-                if store.get_meta("stop_requested_at", 0) >= started_at:
+                if disabled(store.home) or store.get_meta("stop_requested_at", 0) >= started_at:
                     stop_event.set()
                 if not store.acquire_lease(owner, lease_ttl):
                     lease_lost.set()

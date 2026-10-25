@@ -14,5 +14,6 @@
   "title_prefix": "❗ ",
   "limit_ids": [],
   "server_command": ["codex", "app-server"],
-  "control_active_turns": false
+  "control_active_turns": false,
+  "auto_start_monitor": true
 }

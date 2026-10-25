@@ -5,6 +5,7 @@ import sqlite3
 
 from . import __version__
 from .report import export_report
+from .control import disable
 
 
 CHECKPOINT_SCHEMA = {
@@ -26,18 +27,30 @@ TOOLS = [
     {"name": "read_checkpoint", "description": "读取最近保存的断点、时间和任务阶段；恢复前核对实际现场。",
      "inputSchema": {"type": "object", "additionalProperties": False, "required": ["thread_id"],
                      "properties": IDENTITY}},
-    {"name": "status", "description": "每轮开始、写入前及连续工作60秒后检查额度；protect/unknown时保存断点并结束。只读本地缓存，不联网。",
+    {"name": "status", "description": "检查本地额度；仅protect时保存断点结束，unknown/disabled继续。缺少监控时后台恢复，不等待联网结果。",
      "inputSchema": {"type": "object", "additionalProperties": False,
                      "properties": {"thread_id": {"type": "string"}}}},
+    {"name": "disable_guard", "description": "仅在用户明确要求停用保护时调用。立即持久停用并停止监控，低额度时也允许，不执行shell。",
+     "inputSchema": {"type": "object", "additionalProperties": False, "properties": {}}},
 ]
 
 
 def call_tool(name, arguments, store, config):
     if not isinstance(arguments, dict):
         raise ValueError("arguments 必须为对象")
+    if name == "disable_guard":
+        if arguments:
+            raise ValueError("disable_guard 不接受参数")
+        disable(store.home)
+        return {"disabled": True, "action": "continue", "state_preserved": str(store.home)}
     if name == "status":
         if set(arguments) - {"thread_id"} or ("thread_id" in arguments and not isinstance(arguments["thread_id"], str)):
             raise ValueError("status 只接受可选的字符串 thread_id")
+        from .service import ensure_monitor
+        try:
+            ensure_monitor(store, config)
+        except (OSError, sqlite3.Error, ValueError):
+            pass
         decision = store.decision(config)
         result = decision.to_dict()
         result["action"] = "save_checkpoint_and_stop" if decision.protected else "continue"
@@ -89,6 +102,11 @@ def serve(store, config, input_stream, output_stream):
             method = request.get("method")
             params = request.get("params") or {}
             if method == "initialize":
+                from .service import ensure_monitor
+                try:
+                    ensure_monitor(store, config)
+                except (OSError, sqlite3.Error, ValueError):
+                    pass
                 result = {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": False}},
                           "serverInfo": {"name": "codex_limit_guard", "version": __version__}}
             elif method == "ping":

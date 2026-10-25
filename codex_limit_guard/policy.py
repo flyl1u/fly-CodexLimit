@@ -89,7 +89,8 @@ class Decision:
 
     @property
     def protected(self) -> bool:
-        return self.mode in ("protect", "unknown")
+        # Missing monitoring evidence is not evidence of exhausted quota.
+        return self.mode == "protect"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -103,8 +104,8 @@ def decide(snapshot: Snapshot | None, previous: Snapshot | None, config: Config,
     observed = snapshot.observed_at if snapshot else 0
     if snapshot is None or now - observed > config.stale_seconds or observed > now + 5:
         return Decision("unknown", "额度缓存缺失或已过期，等待账户查询", None, pause_at, resume_at, observed)
-    if snapshot.incomplete or not snapshot.windows:
-        return Decision("unknown", "额度数据不完整，不能确认可以继续", None, pause_at, resume_at, observed)
+    if not snapshot.windows:
+        return Decision("unknown", "额度数据不完整；监控待恢复，业务继续", None, pause_at, resume_at, observed)
     elapsed = snapshot.observed_at - previous.observed_at if previous else 0
     old = {w.key: w.used for w in previous.windows} if previous and 0 < elapsed <= config.stale_seconds else {}
     decisions = []
@@ -125,4 +126,8 @@ def decide(snapshot: Snapshot | None, previous: Snapshot | None, config: Config,
         decisions.append(Decision(mode, reason, remaining, pause_at, resume_at, observed, label))
     # Compare every window against its own threshold before choosing the cause.
     priority = {"protect": 0, "normal": 1}
-    return min(decisions, key=lambda d: (priority[d.mode], d.remaining - (d.resume_at if latched else d.pause_at)))
+    chosen = min(decisions, key=lambda d: (priority[d.mode], d.remaining - (d.resume_at if latched else d.pause_at)))
+    if snapshot.incomplete and not chosen.protected:
+        return Decision("unknown", "额度数据不完整；监控待恢复，业务继续", None,
+                        chosen.pause_at, chosen.resume_at, observed)
+    return chosen

@@ -5,12 +5,14 @@ import json
 from .daemon import PAUSE_SIGNAL
 from .report import export_report
 from .protocol import INSTRUCTIONS
+from .control import disabled
 
 
 GUARD_TOOLS = {
     "mcp__codex_limit_guard__save_checkpoint",
     "mcp__codex_limit_guard__read_checkpoint",
     "mcp__codex_limit_guard__status",
+    "mcp__codex_limit_guard__disable_guard",
 }
 
 
@@ -30,6 +32,8 @@ def is_guard_tool(event):
     args = event.get("tool_input")
     if not isinstance(args, dict):
         return False
+    if name.endswith("__disable_guard"):
+        return not args
     if name.endswith("__status"):
         return not args or (set(args) == {"thread_id"} and args["thread_id"] == event.get("session_id"))
     return (args.get("thread_id") == event.get("session_id")
@@ -37,6 +41,8 @@ def is_guard_tool(event):
 
 
 def handle_hook(event, store, config, now=None):
+    if disabled(store.home):
+        return {}
     if not isinstance(event, dict):
         raise ValueError("Hook 输入必须是对象")
     name = event.get("hook_event_name")
@@ -47,6 +53,7 @@ def handle_hook(event, store, config, now=None):
     store.register(thread_id, cwd=event.get("cwd") or "", now=now)
     store.record_hook(thread_id, name or "unknown", turn_id, now=now)
     decision = store.decision(config, now=now)
+    store.release_unverified_holds(config, now=now)
     task = store.task(thread_id)
     if name == "SessionStart":
         return context(name, (
@@ -119,9 +126,5 @@ def handle_hook(event, store, config, now=None):
 
 
 def error_output(event_name, message):
-    message = f"Limit Guard 本地检查失败：{message[:250]}。请检查守护程序状态。"
-    if event_name == "PreToolUse":
-        return deny_tool(message)
-    if event_name == "UserPromptSubmit":
-        return context(event_name, message + " 用户消息已接收；不要把检查故障当作额度耗尽。")
-    return {"systemMessage": message}
+    # Monitor, config, SQLite and transport faults must never lock the chat out.
+    return {}

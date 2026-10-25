@@ -58,15 +58,15 @@ python guard.py demo
 ## 启用到本机 Codex
 
 前提是已安装 Python 3.11+，并通过 `codex login` 登录 Codex CLI。
-首次安装按以下顺序启动监控，再安装会话集成：
+首次安装按以下顺序安装集成，再明确启用并启动监控：
 
 ```powershell
 python guard.py doctor --live
 python guard.py init
-powershell.exe -NoProfile -File .\scripts\start-guard.ps1
-python guard.py status
 python guard.py install --dry-run
 python guard.py install
+powershell.exe -NoProfile -File .\scripts\start-guard.ps1
+python guard.py status
 ```
 
 安装器合并用户级 `hooks.json`，向 `config.toml` 加入专用断点 MCP，
@@ -107,6 +107,11 @@ Hook 注入完整的 `codex-limit-checkpoint` Skill 正文，让任务保存断�
 业务工具暂停，专用 MCP 仍可保存/读取断点及查询状态。若回合结束前尚未保存当前断点，
 Stop Hook 最多请求一次收尾续写；保存后或续写已执行即结束，不循环消耗额度。
 
+**只有有效快照确认触及保护线时才暂停。** 缓存缺失/过期、监控失联、配置或数据库
+检查失败、MCP 不可用时继续正常聊天，状态仍如实显示 `unknown`，不声称监控正常。
+不会因此让“你好”保存断点或暂停。旧版因缓存故障产生的暂停记录会解除。
+MCP 连接或用户回合发现监控退出时，会在后台尝试重启；并发启动有独立去重。
+
 | 阶段 | 行为 |
 | --- | --- |
 | `running` | 任务执行中，重要阶段保存断点 |
@@ -146,11 +151,12 @@ python guard.py doctor --live --thread YOUR_THREAD_ID
 | `max_pause_remaining` | 60 | 动态收尾线的上限 |
 | `poll_seconds` | 30 | 账户轮询间隔；所有 Hook 共享结果 |
 | `grace_seconds` | 90 | 发出保护信号后，运行时中断兜底的等待时间 |
-| `stale_seconds` | 120 | 数据过期后按未知状态保护，不能视为额度充足 |
+| `stale_seconds` | 120 | 数据过期后显示 unknown，继续业务，不当作低额度 |
 | `resume_spacing_seconds` | 15 | 不同任务恢复放行的最小间隔 |
 | `resume_slot_seconds` | 120 | 恢复排队/等待首次执行的有效时间 |
 | `limit_ids` | `[]` | 默认检查返回的所有额度桶；可限定确实相关的桶 |
 | `control_active_turns` | `false` | 仅在可连接同一活动运行时的情况下启用中断控制 |
+| `auto_start_monitor` | `true` | MCP/用户回合发现监控退出时后台恢复；停用和卸载后不启动 |
 
 默认基础保护线为**周额度剩余 2%**；若存在 **5 小时额度，则该窗口按剩余 5%** 判断。
 没有 5 小时额度时，只按周额度的 2% 判断。通过接口返回的窗口时长识别 5 小时窗口，
@@ -193,6 +199,12 @@ powershell.exe -NoProfile -File .\scripts\install-startup.ps1 -Remove
 python guard.py uninstall
 ```
 
+`stop` 写入持久停用开关：即使配置损坏也可执行，登录启动和监控恢复不会擅自重新开启。
+聊天内用户明确要求停用时，可直接调用 `codex_limit_guard.disable_guard`；它在低额度时
+仍允许执行，不必先通过会被拦截的 shell 命令。卸载后，旧运行时缓存的 Hook 也会安静退出。
+再次启用需显式执行 `python guard.py enable` 或运行 `start-guard.ps1`；安装本身不取消停用。
+登录任务有一分钟恢复触发及失败重试；停用开关始终优先。
+
 卸载仅移除安装记录中匹配的配置，保留其他 Hook、MCP 和手动修改的 Skill。
 断点、SQLite 和原配置备份保留在状态目录，便于恢复。若托管配置块被手动更改，
 程序会说明冲突并保留现场，不用旧备份覆盖当前配置。
@@ -205,7 +217,7 @@ python -m compileall -q codex_limit_guard guard.py
 python -m pip wheel . --no-deps --wheel-dir .guard-local/dist
 ```
 
-76 项测试覆盖额度窗口、滞回、并发写入、数据库升级、恢复排队、工具准入、
+88 项测试覆盖额度窗口、滞回、并发写入、数据库升级、恢复排队、工具准入、
 真实 Windows Hook 命令、MCP 协议、标题所有权、RPC 断线/超时、安装回滚和卸载合并。
 真实账户验证只调用只读接口，不启动模型回合，不修改真实聊天标题。
 

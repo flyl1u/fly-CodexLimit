@@ -72,15 +72,15 @@ zero model requests**. Each run uses isolated state; the trace is written to
 Requirements: **Python 3.11+**, a working **Codex CLI**, and an account signed in with
 `codex login`. No third-party Python packages are required to run the project.
 
-Start monitoring before installing the session integration:
+Install the integration, then explicitly enable and start monitoring:
 
 ```powershell
 python guard.py doctor --live
 python guard.py init
-powershell.exe -NoProfile -File .\scripts\start-guard.ps1
-python guard.py status
 python guard.py install --dry-run
 python guard.py install
+powershell.exe -NoProfile -File .\scripts\start-guard.ps1
+python guard.py status
 ```
 
 The installer adds user-level Hooks, the `codex_limit_guard` MCP server, the
@@ -100,6 +100,12 @@ While the target chat is working, verify actual callbacks from another terminal:
 ```powershell
 python guard.py status --thread YOUR_THREAD_ID --require-verified --json
 ```
+
+Only fresh quota evidence can pause a chat. Missing, stale or incomplete quota,
+monitor failure, MCP unavailability and Hook check errors leave normal chat running.
+The status stays `unknown`; it is never reported as healthy monitoring. MCP startup
+and user prompts can recover a missing monitor in the background, with concurrent
+starts deduplicated. Explicit stop and uninstall prevent this recovery.
 
 Exit 0 requires fresh prompt and pre-tool callbacks for the current turn; exit 2
 means unverified. Registration, old callbacks and MCP checkpoints are not proof.
@@ -173,7 +179,7 @@ Hooks read configuration on their next invocation.
 | `max_pause_remaining` | `60` | Upper bound on the dynamic protection threshold. |
 | `poll_seconds` | `30` | Account polling interval shared by all Hooks. |
 | `grace_seconds` | `90` | Wait before the verified-runtime interrupt fallback. |
-| `stale_seconds` | `120` | Maximum quota cache age; stale data is treated as unknown. |
+| `stale_seconds` | `120` | Maximum cache age; unknown quota does not pause normal work. |
 | `resume_spacing_seconds` | `15` | Minimum spacing between resume admissions. |
 | `resume_slot_seconds` | `120` | Queue and initial-execution slot validity. |
 | `limit_ids` | `[]` | Inspect all returned buckets by default, or explicitly select relevant ones. |
@@ -214,6 +220,12 @@ manually edited Skills are preserved. Checkpoints, SQLite state, and original co
 backups remain local. If a managed block was edited, the installer reports the conflict
 and leaves it intact instead of overwriting current settings with an old backup.
 
+`stop` is persistent and works even with invalid configuration or a broken database.
+The chat's `disable_guard` MCP tool remains available during low-quota protection.
+Cached Hooks become inert after uninstall. Resuming protection requires an explicit
+`python guard.py enable` or `start-guard.ps1`; reinstalling alone does not enable it.
+The logon task retries failures and has a one-minute recovery trigger, respecting stop.
+
 For foreground debugging, use `python guard.py daemon`. `daemon --once` is a one-shot
 diagnostic and does not provide continuous protection.
 
@@ -225,7 +237,7 @@ python -m compileall -q codex_limit_guard guard.py
 python -m pip wheel . --no-deps --wheel-dir .guard-local/dist
 ```
 
-The 76 tests cover quota windows, hysteresis, concurrent writes, schema upgrades, resume
+The 88 tests cover quota windows, hysteresis, concurrent writes, schema upgrades, resume
 admission, Hook decisions, native Windows launch commands, MCP, title ownership,
 RPC timeout/disconnection, and reversible installation. Windows account reads, daemon
 startup/shutdown, and isolated wheel installation have also been verified.

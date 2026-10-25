@@ -111,6 +111,7 @@ class InstallTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "Windows Hook launcher")
     def test_generated_windows_hook_runs_with_spaces_and_unicode_paths(self):
         install(self.home, self.codex, ENTRY)
+        atomic_json(self.home / "config.json", {"auto_start_monitor": False})
         hooks = json.loads((self.codex / "hooks.json").read_text(encoding="utf-8"))
         command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["commandWindows"].split()
         event = {"session_id": "real-hook-test", "hook_event_name": "SessionStart", "cwd": "D:/中文目录"}
@@ -124,6 +125,7 @@ class InstallTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "Windows Hook launcher")
     def test_installed_hooks_stay_quiet_until_checkpoint_protection_over_stdio(self):
         install(self.home, self.codex, ENTRY)
+        atomic_json(self.home / "config.json", {"auto_start_monitor": False})
         hooks = json.loads((self.codex / "hooks.json").read_text(encoding="utf-8"))
         store, config = Store(self.home), Config()
 
@@ -135,6 +137,11 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             return json.loads(result.stdout) if result.stdout.strip() else {}
 
+        # The reported regression: a 99% snapshot outlives a dead monitor.
+        store.observe_quota(quota(1,42), config, now=time.time()-3600)
+        self.assertEqual(invoke("UserPromptSubmit"), {})
+        self.assertEqual(invoke("PreToolUse", tool_name="Bash", tool_input={}), {})
+        self.assertEqual(invoke("Stop"), {})
         store.observe_quota(quota(83), config)
         self.assertEqual(invoke("UserPromptSubmit"), {})
         self.assertEqual(invoke("PreToolUse", tool_name="Bash", tool_input={}), {})
@@ -179,14 +186,16 @@ class CliTests(unittest.TestCase):
         result = self.run_cli("status")
         self.assertEqual(result.returncode, 1)
 
-    def test_hook_error_still_returns_valid_protocol_block(self):
+    def test_hook_error_does_not_block_the_chat(self):
         self.home.mkdir()
         (self.home / "config.json").write_text("invalid", encoding="utf-8")
         result = self.run_cli("hook", data=json.dumps({"session_id": "test", "hook_event_name": "PreToolUse"}))
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertEqual(json.loads(result.stdout), {})
 
     def test_chat_verification_requires_actual_current_hook_receipts(self):
+        install(self.home, Path(self.temp.name) / "codex", ENTRY)
+        atomic_json(self.home / "config.json", {"auto_start_monitor": False})
         store = Store(self.home)
         store.observe_quota(quota(), Config())
         args = ("status", "--json", "--thread", "chat", "--require-verified")

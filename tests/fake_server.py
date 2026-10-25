@@ -16,6 +16,9 @@ for line in sys.stdin:
         continue
     elif method == "disconnect":
         break
+    elif method == "account/rateLimits/read":
+        result = {"rateLimits": {"primary": {"usedPercent": 1, "windowDurationMins": 300},
+                                 "secondary": {"usedPercent": 42, "windowDurationMins": 10080}}}
     elif method == "bad":
         print(json.dumps({"id": msg["id"], "error": {"code": -32601, "message": "missing method"}}), flush=True)
         continue

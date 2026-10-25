@@ -16,6 +16,7 @@ from .files import atomic_json
 from .hooks import error_output, handle_hook
 from .report import export_report
 from .store import Store
+from .control import disable, disabled, enable
 
 
 def emit(value):
@@ -31,6 +32,7 @@ def parser():
     daemon = commands.add_parser("daemon", help="运行后台监控；Ctrl+C 或 stop 结束")
     daemon.add_argument("--once", action="store_true", help="只查询并协调一次")
     commands.add_parser("stop", help="通知本状态目录的守护程序退出")
+    commands.add_parser("enable", help="明确重新启用已安装的保护，取消持久停用开关")
     status = commands.add_parser("status", help="查看缓存额度、任务和最近错误")
     status.add_argument("--json", action="store_true")
     status.add_argument("--thread", help="核对指定聊天本回合的真实 Hook 回调")
@@ -98,8 +100,28 @@ def main(argv=None):
     home = (args.home or default_home()).expanduser().resolve()
     event = {}
     try:
+        if args.command == "stop":
+            # This escape must also work with broken config or an unavailable database.
+            disable(home)
+            emit({"disabled": True, "stop_requested": True, "home": str(home)})
+            return 0
+        if args.command == "enable":
+            enable(home)
+            emit({"enabled": True, "home": str(home)})
+            return 0
+        if args.command == "uninstall":
+            from .install import uninstall
+            codex_home = (args.codex_home or Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))).expanduser().resolve()
+            emit(uninstall(home, codex_home))
+            return 0
         if args.command == "hook":
+            if disabled(home) or not (home / "installation.json").is_file():
+                print("{}")
+                return 0
             event = json.loads(sys.stdin.read(131073))
+        if args.command == "daemon" and disabled(home):
+            emit({"mode": "disabled", "reason": "用户已停用；不会因登录或定时启动自动重新启用"})
+            return 0
         config = Config.load(home / "config.json")
         if args.command == "demo":
             from .demo import run_demo
@@ -112,16 +134,13 @@ def main(argv=None):
             result = doctor(home, config, args.live, args.thread)
             emit(result)
             return 1 if args.live and not result.get("quota_readable") else 0
-        if args.command in ("install", "uninstall"):
-            from .install import install, uninstall
+        if args.command == "install":
+            from .install import install
             codex_home = (args.codex_home or Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))).expanduser().resolve()
-            if args.command == "install":
-                entrypoint = Path(__file__).resolve().parent.parent / "guard.py"
-                if not entrypoint.exists():
-                    entrypoint = Path(__file__).with_name("_launcher.py")
-                emit(install(home, codex_home, entrypoint, args.dry_run))
-            else:
-                emit(uninstall(home, codex_home))
+            entrypoint = Path(__file__).resolve().parent.parent / "guard.py"
+            if not entrypoint.exists():
+                entrypoint = Path(__file__).with_name("_launcher.py")
+            emit(install(home, codex_home, entrypoint, args.dry_run))
             return 0
         store = Store(home)
         if args.command == "init":
@@ -130,6 +149,12 @@ def main(argv=None):
                 atomic_json(path, config.to_dict())
             emit({"home": str(home), "config": str(path), "created": True})
         elif args.command == "hook":
+            if event.get("hook_event_name") in ("SessionStart", "UserPromptSubmit"):
+                from .service import ensure_monitor
+                try:
+                    ensure_monitor(store, config)
+                except (OSError, ValueError, sqlite3.Error):
+                    pass
             result = handle_hook(event, store, config)
             if result or event.get("hook_event_name") in ("Stop", "Interrupt"):
                 print(json.dumps(result, ensure_ascii=False))
@@ -143,10 +168,6 @@ def main(argv=None):
             decision = run_daemon(store, config, stopped, once=args.once)
             if args.once and decision:
                 emit(decision.to_dict())
-        elif args.command == "stop":
-            import time
-            store.put_meta("stop_requested_at", time.time())
-            emit({"stop_requested": True, "home": str(home)})
         elif args.command == "status":
             if args.require_verified and not args.thread:
                 raise ValueError("--require-verified 需配合 --thread，不能把账户连接当作聊天保护证明")

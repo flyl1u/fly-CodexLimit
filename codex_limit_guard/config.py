@@ -42,6 +42,7 @@ class Config:
     # Spawned stdio is an account/metadata connection, never an existing runtime.
     server_command: tuple[str, ...] = ("codex", "app-server")
     control_active_turns: bool = False
+    auto_start_monitor: bool = True
 
     def __post_init__(self):
         for name in (
@@ -71,6 +72,8 @@ class Config:
             raise ValueError("control_active_turns 必须是布尔值")
         if not isinstance(self.adaptive_reserve, bool):
             raise ValueError("adaptive_reserve 必须是布尔值")
+        if not isinstance(self.auto_start_monitor, bool):
+            raise ValueError("auto_start_monitor 必须是布尔值")
         for name in ("limit_ids", "server_command"):
             value = getattr(self, name)
             if not isinstance(value, (list, tuple)) or any(not isinstance(x, str) or not x for x in value):

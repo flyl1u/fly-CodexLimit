@@ -2,12 +2,14 @@
 
 from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import sqlite3
 import time
 
 from .config import Config
 from .policy import Decision, Snapshot, decide
+from .control import disabled
 
 
 SCHEMA = """
@@ -152,7 +154,7 @@ class Store:
         active = [t for t in self.tasks() if t["phase"] in ("running", "resuming", "pausing")]
         unverified = [t["thread_id"] for t in active
                       if not self.hook_coverage(t["thread_id"], now, config.stale_seconds)["verified"]]
-        return {"mode": "cooperative", "registered_active": len(active),
+        return {"mode": "disabled" if disabled(self.home) else "cooperative", "registered_active": len(active),
                 "unverified_threads": unverified,
                 "callbacks_verified": bool(active) and not unverified,
                 "runtime_control_requested": config.control_active_turns}
@@ -188,8 +190,36 @@ class Store:
 
     def decision(self, config, now=None):
         now = time.time() if now is None else now
+        if disabled(self.home):
+            return Decision("disabled", "用户已停用保护", None, config.pause_remaining,
+                            config.resume_remaining, now)
         with self.connect() as db:
             return self._decision(db, config, now)
+
+    @staticmethod
+    def _release_unverified_hold(db, thread_id, decision, now):
+        if decision.protected:
+            return
+        row = db.execute("SELECT * FROM tasks WHERE thread_id=?", (thread_id,)).fetchone()
+        if not row or row["phase"] not in ("pausing", "paused", "ready"):
+            return
+        reason = row["pause_reason"] or ""
+        monitor_fault = any(s in reason for s in ("缓存", "数据不完整", "本地检查失败"))
+        if decision.mode != "unknown" and not monitor_fault:
+            return
+        # Release the guard's hold, without claiming that the model or command stopped.
+        phase = "running" if row["closed_at"] is None else "idle"
+        db.execute("""UPDATE tasks SET phase=?,pause_reason=NULL,pause_requested_at=NULL,
+            pause_turn_id=NULL,resume_requested_at=NULL,resume_turn_id=NULL,
+            steer_turn_id=NULL,interrupt_turn_id=NULL WHERE thread_id=?""", (phase, thread_id))
+        Store._event(db, now, thread_id, "unverified_pause_released", {"reason": reason})
+
+    def release_unverified_holds(self, config, now=None):
+        now = time.time() if now is None else now
+        with self.transaction() as db:
+            decision = self._decision(db, config, now)
+            for row in db.execute("SELECT thread_id FROM tasks WHERE phase IN ('pausing','paused','ready')").fetchall():
+                self._release_unverified_hold(db, row[0], decision, now)
 
     @staticmethod
     def _pause(db, thread_id, reason, now):
@@ -221,7 +251,7 @@ class Store:
             db.execute("DELETE FROM samples WHERE id < (SELECT MAX(id)-100 FROM samples)")
             self._put(db, "decision", decision.to_dict())
             self._put(db, "quota_policy", policy)
-            # An outage pauses work but cannot manufacture a quota-recovery latch.
+            # An outage never manufactures a quota-recovery latch or a business pause.
             self._put(db, "quota_latched", latched if decision.mode == "unknown" else decision.mode == "protect")
             if old_decision.get("mode") != decision.mode:
                 self._event(db, now, None, "quota_mode", decision.to_dict())
@@ -230,6 +260,8 @@ class Store:
                     self._pause(db, row[0], decision.reason, now)
                 db.execute("UPDATE tasks SET phase='paused' WHERE phase='ready'")
             else:
+                for row in db.execute("SELECT thread_id FROM tasks WHERE phase IN ('pausing','paused','ready')").fetchall():
+                    self._release_unverified_hold(db, row[0], decision, now)
                 db.execute("UPDATE tasks SET phase='ready' WHERE phase='paused'")
             return decision
 
@@ -237,11 +269,14 @@ class Store:
         now = time.time() if now is None else now
         with self.transaction() as db:
             decision = self._decision(db, config, now)
+            self._put(db, "decision", decision.to_dict())
             if decision.protected:
-                self._put(db, "decision", decision.to_dict())
                 for row in db.execute("SELECT thread_id FROM tasks WHERE phase IN ('running','resuming')").fetchall():
                     self._pause(db, row[0], decision.reason, now)
                 db.execute("UPDATE tasks SET phase='paused' WHERE phase='ready'")
+            else:
+                for row in db.execute("SELECT thread_id FROM tasks WHERE phase IN ('pausing','paused','ready')").fetchall():
+                    self._release_unverified_hold(db, row[0], decision, now)
             return decision
 
     def begin_work(self, thread_id, turn_id, config, now=None, tool=None, executed=False, user_submitted=False):
@@ -251,6 +286,8 @@ class Store:
             if row is None:
                 raise ValueError("任务尚未注册")
             decision = self._decision(db, config, now)
+            self._release_unverified_hold(db, thread_id, decision, now)
+            row = db.execute("SELECT * FROM tasks WHERE thread_id=?", (thread_id,)).fetchone()
             if row["phase"] in ("paused", "ready", "pausing"):
                 return False
             if (not user_submitted and row["phase"] in ("running", "resuming")
@@ -268,7 +305,7 @@ class Store:
             if tool and executed:
                 db.execute("UPDATE tasks SET last_tool=?,last_tool_at=?,last_event_at=? WHERE thread_id=?",
                            (tool[:200], now, now, thread_id))
-                if row["phase"] == "resuming":
+                if row["phase"] == "resuming" or row["marker_owned"]:
                     db.execute("""UPDATE tasks SET phase='running',turn_id=?,resume_started_at=?,
                         resume_requested_at=NULL WHERE thread_id=?""", (turn_id, now, thread_id))
                     self._event(db, now, thread_id, "resume_started")
@@ -280,6 +317,8 @@ class Store:
         with self.transaction() as db:
             row = db.execute("SELECT * FROM tasks WHERE thread_id=?", (thread_id,)).fetchone()
             decision = self._decision(db, config, now)
+            self._release_unverified_hold(db, thread_id, decision, now)
+            row = db.execute("SELECT * FROM tasks WHERE thread_id=?", (thread_id,)).fetchone()
             if row is None:
                 raise ValueError("任务尚未注册")
             if decision.protected:
@@ -389,8 +428,10 @@ class Store:
         with self.transaction() as db:
             lease = self._meta(db, "daemon_lease", {})
             if lease.get("owner") != owner and lease.get("expires_at", 0) > now:
-                return False
-            self._put(db, "daemon_lease", {"owner": owner, "expires_at": now + ttl})
+                from .service import process_alive
+                if not lease.get("pid") or process_alive(lease["pid"]):
+                    return False
+            self._put(db, "daemon_lease", {"owner": owner, "pid": os.getpid(), "expires_at": now + ttl})
             return True
 
     def release_lease(self, owner):

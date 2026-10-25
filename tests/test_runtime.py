@@ -61,6 +61,7 @@ class RuntimeTests(unittest.TestCase):
         return sum(call[0] == method for call in self.rpc.calls)
 
     def test_isolated_server_does_not_interrupt_or_rename_active_desktop_task(self):
+        self.store.observe_quota(quota(99), self.cfg, now=299)
         self.coordinator.reconcile_tasks(300)
         self.assertEqual(self.count("turn/interrupt"), 0)
         self.assertEqual(self.count("thread/name/set"), 0)

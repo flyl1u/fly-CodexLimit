@@ -3,7 +3,13 @@ name: codex-limit-checkpoint
 description: 响应 Codex Limit Guard 的额度保护信号，保存当前聊天断点并收尾；或在用户续做被保护的任务时核对断点。普通任务无需加载。
 ---
 
-收到 `[CODEX_LIMIT_GUARD]` 后停止新增业务工作和并行分支，使用当前上下文收尾。
+用户明确要求停用、卸载或在停用状态修复保护器时，优先调用
+`codex_limit_guard.disable_guard`。该工具无需 shell，在低额度时也可执行；
+停用成功后遵从用户请求继续，不进入下面的收尾流程。
+
+缓存过期、额度未知、监控失联或 MCP 不可用不构成低额度证据，不因此暂停普通任务。
+仅在有效额度快照确认触及保护线且收到 `[CODEX_LIMIT_GUARD]` 时，
+停止新增业务工作和并行分支，使用当前上下文收尾。
 调用 `codex_limit_guard.save_checkpoint`，使用 Hook 给出的 `thread_id` 与当前 `turn_id`。
 `checkpoint` 至少包含 `current`（当前现场）和 `next_step`（恢复后的第一步）；
 按需补充 `completed`、`remaining`、`validation`、`files`、`commands` 字符串数组。

@@ -221,10 +221,11 @@ class StoreTests(unittest.TestCase):
         self.store.begin_work("a", "new-a", self.cfg, now=163, tool="Bash", executed=True)
         self.assertTrue(self.store.request_resume("b", "new-b", self.cfg, now=177)[0])
 
-    def test_stale_cache_protects_active_task(self):
+    def test_stale_cache_reports_unknown_without_pausing_active_task(self):
         self.start()
         self.store.protect_if_stale(self.cfg, now=300)
-        self.assertEqual(self.store.task("t")["phase"], "pausing")
+        self.assertEqual(self.store.task("t")["phase"], "running")
+        self.assertFalse(self.store.decision(self.cfg, now=300).protected)
 
     def test_fresh_seventeen_percent_recovers_after_cache_outage(self):
         self.start()
