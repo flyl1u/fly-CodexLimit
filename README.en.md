@@ -120,8 +120,9 @@ To start automatically at sign-in:
 powershell.exe -NoProfile -File .\scripts\install-startup.ps1
 ```
 
-This creates a current-user Windows scheduled task with a hidden window. The project
-directory must remain available at its installed location.
+This creates a current-user Windows scheduled task that runs Python's `pythonw.exe`
+directly, without a hidden PowerShell wrapper or an encoded command. The Python
+installation must include `pythonw.exe`, and the project directory must stay in place.
 
 Default state directory: `%USERPROFILE%\.codex\limit-guard`.
 `CODEX_HOME`, `CODEX_LIMIT_GUARD_HOME`, and an explicit `--home PATH` are supported.

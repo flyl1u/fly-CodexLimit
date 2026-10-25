@@ -185,7 +185,8 @@ python guard.py daemon
 python guard.py daemon --once
 ```
 
-安装当前用户登录启动任务；它使用用户权限和隐藏窗口运行，不需要管理员权限：
+安装当前用户登录启动任务；它以用户权限直接运行 Python 自带的 `pythonw.exe`，
+不需要管理员权限。定时执行不再经过隐藏 PowerShell 或编码命令：
 
 ```powershell
 powershell.exe -NoProfile -File .\scripts\install-startup.ps1
